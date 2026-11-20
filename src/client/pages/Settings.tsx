@@ -174,6 +174,17 @@ function Connect({ token }: { token: string | null }) {
 			where: "Any MCP client with Streamable HTTP and custom headers",
 			code: `URL:    ${url}\nHeader: Authorization: Bearer ${t}`,
 		},
+		{
+			id: "upload",
+			name: "Upload API",
+			where: "Upload local files directly, so they don't pass through the model. Each part's filename is its path.",
+			code:
+				`curl -H "Authorization: Bearer ${t}" \\\n  -F title="My site" -F visibility=link \\\n` +
+				`  -F "file=@index.html" -F "file=@js/app.js;filename=js/app.js" \\\n  ${me.config.app_origin}/v1/artifacts\n\n` +
+				`# Or with the CLI from the repo (bin/artifacts.mjs, Node 22+):\n` +
+				`#   node bin/artifacts.mjs login        (paste the token)\n` +
+				`#   node bin/artifacts.mjs upload ./site --link`,
+		},
 	];
 	const [active, setActive] = useState(clients[0]!.id);
 	const client = clients.find((c) => c.id === active)!;

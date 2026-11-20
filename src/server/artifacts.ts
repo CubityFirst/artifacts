@@ -68,6 +68,8 @@ export interface FileInput {
 	encoding?: "utf8" | "base64";
 	/** Fetch the bytes from this http(s) URL instead of sending them inline. */
 	url?: string;
+	/** Raw bytes, e.g. from a multipart upload. */
+	bytes?: Uint8Array<ArrayBuffer>;
 	content_type?: string;
 }
 
@@ -178,6 +180,7 @@ interface StoredFile {
 }
 
 async function loadBytes(input: FileInput): Promise<Uint8Array<ArrayBuffer>> {
+	if (input.bytes !== undefined) return input.bytes;
 	if (input.url !== undefined) {
 		let url: URL;
 		try {

@@ -178,7 +178,7 @@ export const VISIBILITY_LABEL: Record<Visibility, string> = {
 	password: "Password",
 };
 
-/** "mcp:Claude Code laptop" → "Claude Code laptop" */
+/** "mcp:Claude Code laptop" / "cli:Claude Code laptop" → "Claude Code laptop" */
 export function sourceLabel(source: string): string {
-	return source.replace(/^mcp:/, "");
+	return source.replace(/^(mcp|cli):/, "");
 }

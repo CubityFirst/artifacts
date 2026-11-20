@@ -2,6 +2,9 @@
 	"name": "artifacts",
 	"private": true,
 	"type": "module",
+	"bin": {
+		"artifacts": "bin/artifacts.mjs"
+	},
 	"scripts": {
 		"dev": "cf dev",
 		"build": "cf build",

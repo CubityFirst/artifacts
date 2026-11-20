@@ -39,6 +39,29 @@ Every change creates a new version. Files are content-addressed per artifact in 
 
 Authenticate with a per-user access token created on the dashboard's **Connect & settings** page (`Authorization: Bearer art_…`). That page also has copy-paste setup for each client.
 
+## Uploading local files
+
+MCP tool calls carry file contents as text the model has to write out, which is slow and costly for anything big or binary. For files already on disk, upload them directly with the same token:
+
+```sh
+node bin/artifacts.mjs login < token.txt          # or set ARTIFACTS_TOKEN; stored in Windows Credential Manager
+node bin/artifacts.mjs upload ./site -t "Benchmarks" --link    # prints the link
+node bin/artifacts.mjs upload chart.png=img/chart.png --to <id> -m "New chart"   # new version
+node bin/artifacts.mjs help
+```
+
+The CLI has no dependencies (Node 22+). Folders keep their relative paths; dotfiles and `node_modules` are skipped.
+
+The endpoints are plain multipart/form-data, so `curl` works too. Each `file` part's filename is its path in the artifact:
+
+| Endpoint | Fields |
+| --- | --- |
+| `POST /v1/artifacts` | `file` (repeatable), `title`, `description`, `entry`, `visibility`, `password`, `model`, `message` |
+| `POST /v1/artifacts/:id` | `file`, `delete` (repeatable), `replace_all`, `title`, `description`, `entry`, `model`, `message` |
+| `GET /v1/me` | Checks a token |
+
+One request can be at most 100 MB (Cloudflare's request limit on Free/Pro plans); the per-file and per-artifact limits match MCP's (50 MB / 200 MB).
+
 ## Local development
 
 ```sh

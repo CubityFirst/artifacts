@@ -5,6 +5,7 @@ import { type AppEnv, authRoutes, sessionMiddleware } from "./auth.ts";
 import { handleContent } from "./content.ts";
 import { ensureSchema, getMeta, setMeta } from "./db.ts";
 import { handleMcp } from "./mcp.ts";
+import { upload } from "./upload.ts";
 
 const app = new Hono<AppEnv>();
 
@@ -13,6 +14,7 @@ app.use("/auth/*", sessionMiddleware);
 app.route("/auth", authRoutes);
 app.route("/api", api);
 app.all("/mcp", (c) => handleMcp(c.req.raw, c.env, c.executionCtx as ExecutionContext));
+app.route("/v1", upload);
 app.get("/healthz", (c) => c.text("ok"));
 // Everything else is the dashboard SPA (static assets, with index.html as the fallback).
 app.all("*", (c) => c.env.ASSETS.fetch(c.req.raw));
