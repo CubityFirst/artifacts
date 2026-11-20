@@ -35,7 +35,7 @@ export default defineConfig({
 			},
 			domains: [new URL(PRODUCTION.app).host, new URL(PRODUCTION.content).host],
 			triggers: [triggers.scheduled({ schedule: "17 * * * *" })],
-			observability: { enabled: true },
+			observability: { enabled: false },
 			env: {
 				DB: bindings.d1({ name: "artifacts" }),
 				FILES: bindings.r2({ name: "artifacts-files" }),
