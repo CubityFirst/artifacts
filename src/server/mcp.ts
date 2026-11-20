@@ -52,26 +52,53 @@ export async function handleMcp(request: Request, env: Env, ctx: ExecutionContex
 	const response = await transport.handleRequest(request);
 	const headers = new Headers(response.headers);
 	for (const [k, v] of Object.entries(CORS)) headers.set(k, v);
-	return new Response(response.body, { status: response.status, headers });
+	let body: BodyInit | null = response.body;
+	if (response.headers.get("content-type")?.includes("application/json")) {
+		const text = await response.text();
+		body = text.includes('"tools"') ? slimToolList(text) : text;
+		headers.delete("content-length");
+	}
+	return new Response(body, { status: response.status, headers });
+}
+
+// Every tools/list goes into each client's context, so drop SDK boilerplate the model doesn't need:
+// `$schema`, `execution.taskSupport`, and zod's ±2^53 bounds on integers.
+function slimToolList(text: string): string {
+	let msg: { result?: { tools?: Array<Record<string, unknown>> } };
+	try {
+		msg = JSON.parse(text);
+	} catch {
+		return text;
+	}
+	const tools = msg.result?.tools;
+	if (!Array.isArray(tools)) return text;
+	const clean = (node: unknown): void => {
+		if (!node || typeof node !== "object") return;
+		const o = node as Record<string, unknown>;
+		delete o.$schema;
+		if (o.minimum === Number.MIN_SAFE_INTEGER) delete o.minimum;
+		if (o.maximum === Number.MAX_SAFE_INTEGER) delete o.maximum;
+		for (const v of Object.values(o)) clean(v);
+	};
+	for (const tool of tools) {
+		delete tool.execution;
+		clean(tool.inputSchema);
+	}
+	return JSON.stringify(msg);
 }
 
 const fileSchema = z.object({
-	path: z.string().describe('Relative path inside the artifact, e.g. "index.html", "assets/app.js", "chart.png".'),
-	content: z
-		.string()
-		.optional()
-		.describe('File contents: UTF-8 text, or base64 when encoding is "base64". Omit when using url.'),
-	encoding: z.enum(["utf8", "base64"]).optional().describe('Defaults to "utf8". Use "base64" for binary files.'),
-	url: z
-		.string()
-		.optional()
-		.describe("Instead of content: an http(s) URL the server downloads the file from (good for large media)."),
-	content_type: z.string().optional().describe("MIME type. Inferred from the file extension when omitted."),
+	path: z.string().describe('Relative path, e.g. "index.html", "assets/app.js".'),
+	content: z.string().optional().describe('Text, or base64 if encoding is "base64". Omit when using url.'),
+	encoding: z.enum(["utf8", "base64"]).optional().describe('"base64" for binary. Default "utf8".'),
+	url: z.string().optional().describe("http(s) URL to fetch instead of content (good for large media)."),
+	content_type: z.string().optional().describe("MIME type. Default: from the extension."),
 });
 
-const visibilitySchema = z
-	.enum(["private", "link", "password"])
-	.describe('"private": only you, from the dashboard. "link": anyone with the URL. "password": anyone with the URL and password.');
+const VISIBILITY = ["private", "link", "password"] as const;
+const VISIBILITY_TEXT = '"private" (owner only), "link" (anyone with the URL) or "password" (URL + password).';
+const MODEL_TEXT = "Your model id.";
+const MESSAGE_TEXT = "Change note for version history.";
 
 function ok(data: unknown) {
 	return { content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }] };
@@ -98,13 +125,10 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		{ name: "artifacts", title: "Artifacts", version: "1.0.0" },
 		{
 			jsonSchemaValidator: new CfWorkerJsonSchemaValidator(),
-			instructions: [
-				"Artifacts hosts web pages, documents, images, video, audio, data and code that you publish, and lets the user browse, share and manage them from a dashboard.",
-				"Publish with publish_artifact; change an existing one with edit_artifact_file (small text edits) or update_artifact (add/replace/delete files). Every change creates a new version.",
-				"Multi-file sites: use relative URLs between files (\"style.css\", not \"/style.css\").",
-				"New artifacts are private unless you set visibility; the user can change sharing in the dashboard.",
-				`Dashboard: ${env.APP_ORIGIN}`,
-			].join("\n"),
+			instructions:
+				"Hosts files and sites you publish for the user to view and share. Create with publish_artifact; change with " +
+				"edit_artifact_file (text find/replace) or update_artifact (files, title, entry). File changes create a new version. " +
+				'Link site files with relative URLs ("style.css", not "/style.css").',
 		},
 	);
 	const source = `mcp:${token.name}`;
@@ -114,22 +138,22 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		{
 			title: "Publish artifact",
 			description:
-				"Publish a new artifact (a single file or a multi-file site). Supports HTML, Markdown, images, SVG, video, audio, PDF, JSON/CSV and source code. " +
-				"Markdown and code get a rendered viewer; media gets a player. Returns its id, dashboard_url, and a public url when shared. " +
-				`Limits: ${LIMITS.maxFileBytes / 1024 / 1024} MB per file, ${LIMITS.maxArtifactBytes / 1024 / 1024} MB per artifact.`,
+				"Publish a new artifact: one file or a multi-file site (HTML, Markdown, images, media, PDF, data, code). " +
+				`Max ${LIMITS.maxFileBytes / 1024 / 1024} MB per file, ${LIMITS.maxArtifactBytes / 1024 / 1024} MB total. ` +
+				"Returns id, dashboard_url, and url if shared.",
 			inputSchema: {
-				title: z.string().describe("Short human-readable title."),
-				description: z.string().optional().describe("One or two sentences about what this is."),
-				files: z.array(fileSchema).min(1).describe("The files that make up the artifact."),
-				entry: z
-					.string()
+				title: z.string().describe("Short title."),
+				description: z.string().optional().describe("One or two sentences."),
+				files: z.array(fileSchema).min(1),
+				entry: z.string().optional().describe("File that opens first. Default: index.html, README.md, then the first top-level file."),
+				visibility: z
+					.enum(VISIBILITY)
 					.optional()
-					.describe("Which file opens first. Defaults to index.html, then README.md, then the first top-level file."),
-				visibility: visibilitySchema.optional(),
-				password: z.string().optional().describe('Required when visibility is "password".'),
-				model: z.string().optional().describe('The model that produced this, e.g. "claude-opus-5-5", "gpt-5", "gemini-3-pro".'),
+					.describe('Default "private" (owner only). "link": anyone with the URL. "password": URL + password.'),
+				password: z.string().optional().describe('Required for "password".'),
+				model: z.string().optional().describe(MODEL_TEXT),
 			},
-			annotations: { destructiveHint: false, openWorldHint: false },
+			annotations: { destructiveHint: false, openWorldHint: true },
 		},
 		wrap(async (args) => {
 			const art = await createArtifact(env, user.id, { ...args, source, message: "Created" });
@@ -142,18 +166,18 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		{
 			title: "Update artifact",
 			description:
-				"Create a new version of an artifact: add or replace files, delete files, and/or change title, description or entry. " +
-				"Files you don't mention are kept unless replace_all is true. Title/description-only changes don't create a version.",
+				"Add/replace files, delete files, and/or change title, description or entry. Unlisted files are kept unless replace_all. " +
+				"Changing files or entry creates a version; title/description alone doesn't.",
 			inputSchema: {
-				id: z.string().describe("Artifact id."),
+				id: z.string(),
 				files: z.array(fileSchema).optional().describe("Files to add or overwrite."),
-				delete_paths: z.array(z.string()).optional().describe("Paths to remove."),
-				replace_all: z.boolean().optional().describe("If true, the new version contains only `files`."),
+				delete_paths: z.array(z.string()).optional(),
+				replace_all: z.boolean().optional().describe("New version contains only `files`."),
 				title: z.string().optional(),
 				description: z.string().optional(),
-				entry: z.string().optional(),
-				message: z.string().optional().describe("Short note about what changed (shown in version history)."),
-				model: z.string().optional(),
+				entry: z.string().optional().describe("File that opens first; must exist."),
+				message: z.string().optional().describe(MESSAGE_TEXT),
+				model: z.string().optional().describe(MODEL_TEXT),
 			},
 			annotations: { destructiveHint: false, idempotentHint: false },
 		},
@@ -165,18 +189,16 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		{
 			title: "Edit artifact file",
 			description:
-				"Apply exact find-and-replace edits to one text file of an artifact, creating a new version. " +
-				"Each old_str must match exactly once (include surrounding context to make it unique). Edits apply in order, all or nothing.",
+				"Exact find-and-replace in one text file, creating a new version. Each old_str must match exactly once " +
+				"(add context to make it unique). Edits apply in order, all or nothing.",
 			inputSchema: {
-				id: z.string().describe("Artifact id."),
-				path: z.string().describe("File to edit, e.g. index.html."),
-				edits: z
-					.array(z.object({ old_str: z.string(), new_str: z.string() }))
-					.min(1)
-					.describe("Replacements to apply in order."),
-				message: z.string().optional(),
-				model: z.string().optional(),
+				id: z.string(),
+				path: z.string(),
+				edits: z.array(z.object({ old_str: z.string(), new_str: z.string() })).min(1),
+				message: z.string().optional().describe(MESSAGE_TEXT),
+				model: z.string().optional().describe(MODEL_TEXT),
 			},
+			annotations: { destructiveHint: false, idempotentHint: false },
 		},
 		wrap(async ({ id, path, edits, message, model }) =>
 			serializeArtifact(env, await editArtifactFile(env, user.id, id, path, edits, { message, source, model })),
@@ -187,15 +209,14 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		"get_artifact",
 		{
 			title: "Get artifact",
-			description:
-				"Get an artifact's metadata, files and version history. Set include_content to read text files (e.g. before editing).",
+			description: "Get metadata, file list and version history. Use include_content to read text files.",
 			inputSchema: {
 				id: z.string(),
 				include_content: z
 					.union([z.boolean(), z.array(z.string())])
 					.optional()
-					.describe("true for all text files (up to 200 KB total), or a list of paths."),
-				version: z.number().int().optional().describe("Read an older version. Defaults to the current one."),
+					.describe("true for all text files (200 KB max total), or a list of paths."),
+				version: z.number().int().min(1).optional().describe("Version number (1 = first). Default: current."),
 			},
 			annotations: { readOnlyHint: true },
 		},
@@ -240,13 +261,13 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		"list_artifacts",
 		{
 			title: "List artifacts",
-			description: "List or search your artifacts, newest first.",
+			description: "List or search your artifacts, most recently updated first. Returns total for paging.",
 			inputSchema: {
-				query: z.string().optional().describe("Matches title, description or entry file name."),
+				query: z.string().optional().describe("Substring of title, description or entry file name."),
 				kind: z
 					.enum(["html", "markdown", "image", "video", "audio", "pdf", "code", "text", "data", "file"])
 					.optional(),
-				limit: z.number().int().min(1).max(100).optional(),
+				limit: z.number().int().min(1).max(100).optional().describe("Default 25."),
 				offset: z.number().int().min(0).optional(),
 			},
 			annotations: { readOnlyHint: true },
@@ -262,18 +283,16 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		{
 			title: "Set artifact sharing",
 			description:
-				"Change who can open an artifact: private, anyone with the link, or link + password. Optionally set an expiry or regenerate the link (which breaks the old one).",
+				"Change who can open an artifact. Omitted fields keep their current values; leaving \"password\" clears the password. " +
+				"Returns the current url.",
 			inputSchema: {
 				id: z.string(),
-				visibility: visibilitySchema.optional(),
-				password: z.string().optional().describe('New password (for "password" visibility).'),
-				expires_at: z
-					.string()
-					.nullable()
-					.optional()
-					.describe("ISO 8601 time after which the share link stops working, or null to never expire."),
-				regenerate_link: z.boolean().optional(),
+				visibility: z.enum(VISIBILITY).optional().describe(VISIBILITY_TEXT),
+				password: z.string().optional().describe('Required when switching to "password".'),
+				expires_at: z.string().nullable().optional().describe("ISO 8601 time when sharing stops; null = never."),
+				regenerate_link: z.boolean().optional().describe("New URL; the old one and unlocked links stop working."),
 			},
+			annotations: { destructiveHint: true, idempotentHint: false },
 		},
 		wrap(async ({ id, expires_at, ...rest }) => {
 			let expires: number | null | undefined;
@@ -290,7 +309,7 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		"delete_artifact",
 		{
 			title: "Delete artifact",
-			description: "Permanently delete an artifact, all its versions and files. Its links stop working. Cannot be undone.",
+			description: "Permanently delete an artifact with all versions and files; links stop working. Cannot be undone.",
 			inputSchema: { id: z.string() },
 			annotations: { destructiveHint: true, idempotentHint: true },
 		},
