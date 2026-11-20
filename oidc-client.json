@@ -1,0 +1,12 @@
+{
+	"client_name": "Artifacts",
+	"redirect_uris": [
+		"http://localhost:5180/auth/callback",
+		"https://artifacts.cubityfir.st/auth/callback"
+	],
+	"post_logout_redirect_uris": [
+		"http://localhost:5180/",
+		"https://artifacts.cubityfir.st/"
+	],
+	"token_endpoint_auth_method": "client_secret_basic"
+}

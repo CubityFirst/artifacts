@@ -2,4 +2,58 @@
 
 # Artifacts
 
-Created in [T3 Code](https://t3.codes).
+A self-hosted home for AI-made artifacts: web pages, documents, images, video, audio, PDFs, data and code. Any MCP-capable assistant (Claude Code, Codex, Gemini CLI, Cursor, VS Code, …) can publish here, and a dashboard lets you browse, preview, version, share, password-protect and delete everything in one place.
+
+Runs as one Cloudflare Worker: D1 holds the metadata, R2 holds the file bytes.
+
+## How it fits together
+
+| Origin | Serves |
+| --- | --- |
+| `APP_ORIGIN` (`artifacts.cubityfir.st`, dev `http://localhost:5180`) | Dashboard SPA, `/api/*`, `/auth/*` (OIDC), `/mcp` |
+| `CONTENT_ORIGIN` (`artifacts-content.cubityfir.st`, dev `http://127.0.0.1:5180`) | The artifacts themselves |
+
+Artifacts are untrusted HTML/JS, so they live on a separate origin that never sets cookies. Access works like this:
+
+- **Private:** only the owner can open it, through short-lived signed preview URLs (`/t/<token>/…`) that the dashboard issues.
+- **Anyone with link:** `/<slug>/…` is public. The slug is a random 12-character string.
+- **Link + password:** the visitor enters the password, then gets a 12-hour signed `/t/<token>/` link.
+- **Revoking access:** regenerating the link, or changing visibility or the password, bumps a share epoch. That invalidates every outstanding token. An optional expiry turns off public access after a set time.
+
+Every change creates a new version. Files are content-addressed per artifact in R2, so versions share unchanged files. Markdown, code and data get rendered viewers, media gets players, and video/audio support HTTP range requests.
+
+## Sign-in: cubityfir.st (OIDC)
+
+- Authorization Code + PKCE (S256) with `state` and `nonce`, using [`openid-client`](https://github.com/panva/openid-client) configured from the discovery document.
+- id_tokens are verified for RS256 signature (JWKS), `iss`, `aud`, `exp` and `nonce` (`enableNonRepudiationChecks`).
+- Users are keyed on `sub`. Sessions are our own (7 days) and don't depend on the provider's token lifetime.
+- Admin pages are gated on `roles.includes("admin")`.
+- Sign-out deletes the session, then redirects to the provider's `end_session_endpoint` with `id_token_hint`.
+- Server-side OIDC calls go through the `OIDC` service binding to `cubityfirst-auth`. In local dev (`OIDC_TRANSPORT=public`) they use the public issuer instead.
+- An hourly cron deletes local data for identities that `IdentityService.listDeletedUsers` reports.
+- The registered client's redirect URIs live in [`oidc-client.json`](oidc-client.json). After editing them, run `npm run oidc update`; `npm run oidc show` prints the current registration.
+
+## MCP tools
+
+`publish_artifact`, `update_artifact`, `edit_artifact_file`, `get_artifact`, `list_artifacts`, `set_artifact_sharing`, `delete_artifact`.
+
+Authenticate with a per-user access token created on the dashboard's **Connect & settings** page (`Authorization: Bearer art_…`). That page also has copy-paste setup for each client.
+
+## Local development
+
+```sh
+npm install
+npm run dev                # http://localhost:5180 (dashboard), http://127.0.0.1:5180 (content)
+npm run typecheck
+ARTIFACTS_TOKEN=art_… node scripts/mcp-smoke.mjs   # end-to-end MCP + content checks
+```
+
+`.dev.vars` (gitignored) holds `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `SESSION_SECRET`, and the client's `OIDC_REGISTRATION_ACCESS_TOKEN` / `OIDC_REGISTRATION_CLIENT_URI`. The registration token is the only way to change the OIDC client, so back it up somewhere safe.
+
+The D1 schema is applied automatically by the Worker on first request (`src/server/db.ts`).
+
+## Deploying
+
+1. Set the Worker secrets (prompts for each value; copy them from `.dev.vars`):
+   `npx cf workers secrets update` for `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `SESSION_SECRET`.
+2. Run `npm run deploy`. This provisions D1/R2 and attaches the custom domains from `cloudflare.config.ts`.
