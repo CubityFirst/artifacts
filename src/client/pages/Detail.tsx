@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+	ApiError,
 	api,
 	type ArtifactDetail,
 	formatBytes,
@@ -33,7 +34,8 @@ export function DetailPage({ id }: { id: string }) {
 			setArt(await api.get(id, versionParam));
 			setError(null);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : String(err));
+			if (err instanceof ApiError && err.status === 404) setError("Artifact not found");
+			else setError(err instanceof Error ? err.message : String(err));
 		}
 	}, [id, versionParam]);
 
@@ -360,7 +362,7 @@ function SharePanel({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void
 					<span>No public link. Choose who can open it below to get one.</span>
 				</div>
 			)}
-			{art.expired && art.expires_at ? (
+			{art.expired && art.expires_at && art.visibility !== "private" ? (
 				<p className="note note-warn" role="status">
 					<strong>This link expired {timeAgo(art.expires_at)}.</strong> Visitors see a “Link expired” page. Save to reopen it
 					with no expiry, or pick a new date below.

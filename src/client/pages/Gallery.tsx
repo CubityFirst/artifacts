@@ -128,7 +128,8 @@ export function GalleryPage() {
 		password: ["Password", "Visitors enter a password first"],
 		private: ["Private", "Only you can open these"],
 	};
-	const title = visibility ? VIEW[visibility][0] : "All artifacts";
+	const view = visibility ? VIEW[visibility] : undefined;
+	const title = view?.[0] ?? "All artifacts";
 	const filtered = !!(q || kind || visibility);
 	const selecting = selected.size > 0;
 	// A brand-new library has nothing to search, filter or sort: lead with the onboarding instead.
@@ -143,7 +144,7 @@ export function GalleryPage() {
 						<p className="muted" aria-live="polite">
 							{!data
 								? " "
-								: `${visibility ? `${VIEW[visibility][1]} · ` : ""}${
+								: `${view ? `${view[1]} · ` : ""}${
 										filtered
 											? `${data.total} of ${totals.count} ${totals.count === 1 ? "artifact" : "artifacts"}`
 											: `${totals.count} ${totals.count === 1 ? "artifact" : "artifacts"} · ${formatBytes(totals.bytes)}`
@@ -344,7 +345,7 @@ export function VisibilityBadge({ artifact }: { artifact: Pick<Artifact, "visibi
 
 /** Who can open it, pinned to the thumbnail corner so every card states it, private included. */
 function CardStatus({ artifact: a }: { artifact: Artifact }) {
-	const state = a.expired ? "expired" : a.visibility;
+	const state = a.expired && a.visibility !== "private" ? "expired" : a.visibility;
 	const label = { private: "Private", link: "Shared", password: "Password", expired: "Expired" }[state];
 	const icon = a.visibility === "private" ? "lock" : a.visibility === "password" ? "key" : "globe";
 	return (

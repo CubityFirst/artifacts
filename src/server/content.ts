@@ -29,7 +29,7 @@ export async function handleContent(request: Request, env: Env): Promise<Respons
 		if (!token || token.e < Date.now()) {
 			return renderMessage(
 				"This link has timed out",
-				"Links opened after entering a password last 12 hours. Open the original share link again to continue.",
+				"Pages opened this way only stay open for a while. Open the share link again, or reopen the preview from your dashboard.",
 				410,
 			);
 		}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { type AdminUser, api, formatBytes, timeAgo } from "../api.ts";
+import { type AdminUser, ApiError, api, formatBytes, timeAgo } from "../api.ts";
 import { useMe } from "../App.tsx";
 import { Avatar, ConfirmDialog, useToast } from "../components.tsx";
 
@@ -14,7 +14,9 @@ export function AdminPage() {
 		api
 			.adminUsers()
 			.then((r) => setUsers(r.items))
-			.catch((err) => setError(err instanceof Error ? err.message : String(err)));
+			.catch((err) =>
+				setError(err instanceof ApiError && err.status === 403 ? "Forbidden" : err instanceof Error ? err.message : String(err)),
+			);
 	useEffect(() => {
 		void load();
 	}, []);

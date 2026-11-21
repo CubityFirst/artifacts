@@ -77,7 +77,7 @@ function SignIn() {
 				<p>Publish pages, documents and media from any AI assistant, then browse, share and manage them in one place.</p>
 				{authError ? (
 					<p className="signin-error" role="alert">
-						<strong>Couldn't sign you in.</strong> {AUTH_ERRORS[authError] ?? authError}
+						<strong>Couldn't sign you in.</strong> {Object.hasOwn(AUTH_ERRORS, authError) ? AUTH_ERRORS[authError] : authError}
 					</p>
 				) : null}
 				<a className="btn btn-primary btn-lg" href={`/auth/login?return_to=${encodeURIComponent(returnTo)}`}>

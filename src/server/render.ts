@@ -50,9 +50,13 @@ export function renderMarkdown(title: string, markdown: string, path: string, ra
 
 const HLJS = "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0";
 
-/** Minimal RFC 4180 parser: quoted fields, escaped quotes, CRLF. */
-function parseCsv(text: string, sep: string): string[][] {
+/** Most cells the CSV table will render; bigger files use the code view. */
+const MAX_CELLS = 200_000;
+
+/** Minimal RFC 4180 parser: quoted fields, escaped quotes, CRLF. Returns null past MAX_CELLS fields, before allocating more. */
+function parseCsv(text: string, sep: string): string[][] | null {
 	const rows: string[][] = [];
+	let cells = 0;
 	let row: string[] = [];
 	let field = "";
 	let quoted = false;
@@ -62,10 +66,13 @@ function parseCsv(text: string, sep: string): string[][] {
 			if (c === '"' && text[i + 1] === '"') (field += '"'), i++;
 			else if (c === '"') quoted = false;
 			else field += c;
-		} else if (c === '"') quoted = true;
-		else if (c === sep) row.push(field), (field = "");
-		else if (c === "\n" || c === "\r") {
+		} else if (c === '"' && field === "") quoted = true;
+		else if (c === sep) {
+			if (++cells > MAX_CELLS) return null;
+			row.push(field), (field = "");
+		} else if (c === "\n" || c === "\r") {
 			if (c === "\r" && text[i + 1] === "\n") i++;
+			if (++cells > MAX_CELLS) return null;
 			row.push(field), rows.push(row), (row = []), (field = "");
 		} else field += c;
 	}
@@ -73,14 +80,23 @@ function parseCsv(text: string, sep: string): string[][] {
 	return rows;
 }
 
-/** CSV/TSV as a readable table (first row as header, numbers right-aligned); Raw keeps the exact file. */
-function renderTable(title: string, path: string, text: string, rawHref: string, sep: string): string {
-	const [head = [], ...rows] = parseCsv(text, sep);
-	const numeric = head.map((_, c) => rows.length > 0 && rows.every((r) => !r[c] || /^-?[\d.,]+%?$/.test(r[c]!)));
+/** CSV/TSV as a readable table (first row as header, numbers right-aligned); Raw keeps the exact file.
+ * Returns null when the table would be too large to render, so the caller falls back to the code view. */
+function renderTable(title: string, path: string, text: string, rawHref: string, sep: string): string | null {
+	const parsed = parseCsv(text, sep);
+	if (!parsed) return null;
+	const [head = [], ...rows] = parsed;
+	let width = head.length;
+	for (const r of rows) width = Math.max(width, r.length);
+	if ((rows.length + 1) * width > MAX_CELLS) return null;
+	const cols = Array.from({ length: width }, (_, c) => c);
+	const numeric = cols.map((c) => rows.length > 0 && rows.every((r) => !r[c] || /^-?[\d.,]+%?$/.test(r[c]!)));
 	const cell = (v: string, c: number, tag: string) => `<${tag}${numeric[c] ? ' class="n"' : ""}>${escapeHtml(v)}</${tag}>`;
+	const raw = escapeHtml(rawHref);
 	const css = `
-header{position:sticky;top:0;z-index:2;display:flex;gap:6px;align-items:center;padding:8px 12px 8px 16px;border-bottom:1px solid var(--line);background:var(--bg);font:13px ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
-header .name{flex:1;color:var(--fg)}header .meta{font:12px ui-sans-serif,system-ui,sans-serif;margin-right:6px}
+header{position:sticky;top:0;left:0;z-index:2;display:flex;gap:6px;align-items:center;padding:8px 12px 8px 16px;border-bottom:1px solid var(--line);background:var(--bg);font:13px ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
+header .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}header .meta{font:12px ui-sans-serif,system-ui,sans-serif;margin-right:6px}
+@media (max-width:600px){header .meta{display:none}}
 header a{font:600 12.5px ui-sans-serif,system-ui,sans-serif;color:var(--fg);text-decoration:none;padding:5px 10px;border-radius:7px;border:1px solid var(--line);background:var(--card)}
 table{border-collapse:collapse;font-size:13.5px;min-width:100%}
 th,td{padding:7px 14px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
@@ -89,14 +105,17 @@ td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}tr:hover td{backgro
 	return page(
 		title,
 		css,
-		`<header><span class="name">${escapeHtml(path)}</span><span class="meta">${rows.length} rows · ${head.length} columns</span><a href="${escapeHtml(rawHref)}">Raw</a></header>
-<div class="wrap"><table><thead><tr>${head.map((h, c) => cell(h, c, "th")).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${head.map((_, c) => cell(r[c] ?? "", c, "td")).join("")}</tr>`).join("")}</tbody></table></div>`,
+		`<header><span class="name">${escapeHtml(path)}</span><span class="meta">${rows.length} rows · ${width} columns</span><a href="${raw}">Raw</a><a href="${raw}&amp;download=1">Download</a></header>
+<div class="wrap"><table><thead><tr>${cols.map((c) => cell(head[c] ?? "", c, "th")).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${cols.map((c) => cell(r[c] ?? "", c, "td")).join("")}</tr>`).join("")}</tbody></table></div>`,
 	);
 }
 
 export function renderCode(title: string, path: string, text: string, rawHref: string): string {
 	const ext = path.split(".").pop()?.toLowerCase() ?? "";
-	if ((ext === "csv" || ext === "tsv") && text.length < 2_000_000) return renderTable(title, path, text, rawHref, ext === "tsv" ? "\t" : ",");
+	if ((ext === "csv" || ext === "tsv") && text.length < 2_000_000) {
+		const table = renderTable(title, path, text, rawHref, ext === "tsv" ? "\t" : ",");
+		if (table) return table;
+	}
 	const css = `
 header{position:sticky;top:0;display:flex;gap:6px;align-items:center;padding:8px 12px 8px 16px;border-bottom:1px solid var(--line);background:var(--bg);font:13px ui-monospace,Menlo,Consolas,monospace;color:var(--muted)}
 header .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}

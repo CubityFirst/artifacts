@@ -305,11 +305,17 @@ export function ConfirmDialog({
 	onClose: () => void;
 }) {
 	const ref = useRef<HTMLDialogElement>(null);
+	const cancelRef = useRef<HTMLButtonElement>(null);
+	const confirmRef = useRef<HTMLButtonElement>(null);
 	const [busy, setBusy] = useState(false);
 	useEffect(() => {
 		const d = ref.current;
 		if (!d) return;
-		if (open && !d.open) d.showModal();
+		if (open && !d.open) {
+			d.showModal();
+			// React autoFocus only runs on mount, while the dialog is still closed. Enter on a destructive dialog should be the safe choice.
+			(destructive ? cancelRef : confirmRef).current?.focus();
+		}
 		if (!open && d.open) d.close();
 	}, [open]);
 	return (
@@ -322,15 +328,14 @@ export function ConfirmDialog({
 			<h2>{title}</h2>
 			<div className="dialog-body">{body}</div>
 			<div className="dialog-actions">
-				{/* Enter on a destructive dialog should be the safe choice. */}
-				<button type="button" className="btn" onClick={onClose} disabled={busy} autoFocus={destructive}>
+				<button ref={cancelRef} type="button" className="btn" onClick={onClose} disabled={busy}>
 					Cancel
 				</button>
 				<button
 					type="button"
 					className={destructive ? "btn btn-danger" : "btn btn-primary"}
+					ref={confirmRef}
 					disabled={busy}
-					autoFocus={!destructive}
 					onClick={async () => {
 						setBusy(true);
 						try {
