@@ -22,12 +22,12 @@ export function DetailPage({ id }: { id: string }) {
 	const versionParam = Number(search.get("v") || 0) || undefined;
 	const [art, setArt] = useState<ArtifactDetail | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [tab, setTab] = useState<Tab>("share");
 	const [device, setDevice] = useState<Device>("desktop");
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [frameKey, setFrameKey] = useState(0);
 	const frameWrap = useRef<HTMLDivElement>(null);
 	const toast = useToast();
+	const panel = usePanel();
 
 	const reload = useCallback(async () => {
 		try {
@@ -71,30 +71,20 @@ export function DetailPage({ id }: { id: string }) {
 	if (!art)
 		return (
 			<div className="detail" aria-busy="true" aria-label="Loading artifact">
-				<header className="detail-head">
+				<header className="detail-bar">
 					<span className="icon-btn" />
 					<div className="detail-title">
 						<div className="sk sk-title" style={{ width: 260, height: 18 }} />
 						<div className="sk sk-meta" style={{ width: 180 }} />
 					</div>
+					<div className="sk" style={{ width: 96, height: 28 }} />
 				</header>
 				<div className="detail-body">
 					<section className="preview">
-						<div className="preview-bar">
-							<div className="sk" style={{ width: 96, height: 28 }} />
-						</div>
 						<div className="frame-wrap">
 							<div className="sk sk-frame" />
 						</div>
 					</section>
-					<aside className="panel">
-						<div className="panel-body stack" style={{ alignContent: "start" }}>
-							<div className="sk" style={{ height: 40 }} />
-							<div className="sk" style={{ height: 56 }} />
-							<div className="sk" style={{ height: 56 }} />
-							<div className="sk" style={{ height: 56 }} />
-						</div>
-					</aside>
 				</div>
 			</div>
 		);
@@ -102,11 +92,13 @@ export function DetailPage({ id }: { id: string }) {
 	const viewingOld = art.viewing_version !== art.version;
 	const openUrl = art.url && !viewingOld ? art.url : art.preview_url;
 	const viewedAt = art.versions.find((v) => v.version === art.viewing_version)?.created_at;
+	const shareState =
+		art.visibility === "private" ? "Private" : art.expired ? "Expired" : art.visibility === "password" ? "Password" : "Shared";
 
 	return (
 		<div className="detail">
-			<header className="detail-head">
-				<Link href="/" className="icon-btn" aria-label="Back to artifacts">
+			<header className="detail-bar">
+				<Link href="/" className="icon-btn" aria-label="Back to artifacts" title="Back to artifacts">
 					<Icon name="back" />
 				</Link>
 				<div className="detail-title">
@@ -117,88 +109,86 @@ export function DetailPage({ id }: { id: string }) {
 							{KIND_LABEL[art.kind]}
 						</span>
 						<VisibilityBadge artifact={art} />
-						<span className="muted">
-							v{art.version} · updated {timeAgo(art.updated_at)}
+						<span className="muted" title={`Updated ${formatDate(art.updated_at)}`}>
+							v{art.version} · {timeAgo(art.updated_at)}
 						</span>
 					</div>
 				</div>
+				<div className="detail-tools">
+					<div className="seg" role="group" aria-label="Preview width">
+						{(["desktop", "tablet", "phone"] as const).map((d) => (
+							<button
+								key={d}
+								type="button"
+								aria-pressed={device === d}
+								aria-label={`${d} width`}
+								title={`${d[0]!.toUpperCase()}${d.slice(1)} width`}
+								onClick={() => setDevice(d)}
+							>
+								<Icon name={d === "desktop" ? "monitor" : d} size={16} />
+							</button>
+						))}
+					</div>
+					<button
+						type="button"
+						className="icon-btn"
+						aria-label="Reload preview"
+						title="Reload preview"
+						// Refetch first: the preview URL is a capability that expires after 2 hours.
+						onClick={() => void reload().then(() => setFrameKey((k) => k + 1))}
+					>
+						<Icon name="refresh" size={16} />
+					</button>
+					<button
+						type="button"
+						className="icon-btn"
+						aria-label="Full screen"
+						title="Full screen"
+						onClick={() => frameWrap.current?.requestFullscreen?.()}
+					>
+						<Icon name="maximize" size={16} />
+					</button>
+				</div>
 				<div className="detail-actions">
-					{art.url ? <CopyButton value={art.url} label="Copy link" /> : null}
-					<a className="btn" href={openUrl} target="_blank" rel="noreferrer">
-						<Icon name="external" size={16} /> Open
+					{art.url ? <CopyButton value={art.url} label="Copy link" className="btn copy-link" /> : null}
+					<a
+						className="btn btn-open"
+						href={openUrl}
+						target="_blank"
+						rel="noreferrer"
+						aria-label="Open in a new tab"
+						title="Open in a new tab"
+					>
+						<Icon name="external" size={16} />
+						<span className="btn-label">Open</span>
 					</a>
+					<button
+						type="button"
+						className="btn btn-share"
+						aria-controls="detail-panel"
+						aria-expanded={panel.tab === "share"}
+						title={`Sharing: ${shareState}`}
+						onClick={(e) => panel.toggle("share", e.currentTarget)}
+					>
+						<Icon name={art.visibility === "private" ? "lock" : art.visibility === "password" ? "key" : "globe"} size={16} />
+						Share
+					</button>
+					<button
+						type="button"
+						className="icon-btn"
+						aria-controls="detail-panel"
+						aria-expanded={panel.tab !== null}
+						aria-label={panel.tab ? "Close panel" : "Details, versions and files"}
+						title={panel.tab ? "Close panel (Esc)" : "Details, versions and files"}
+						onClick={(e) => panel.toggle(null, e.currentTarget)}
+					>
+						<Icon name="panel" size={18} />
+					</button>
 				</div>
 			</header>
 
 			<div className="detail-body">
 				<section className="preview" aria-label="Preview">
-					{viewingOld ? (
-						<div className="banner">
-							<Icon name="history" size={16} />
-							<span className="banner-text">
-								<strong>
-									Viewing v{art.viewing_version} of {art.version}
-									{viewedAt ? `, from ${timeAgo(viewedAt)}` : ""}
-								</strong>
-								<span>Restoring publishes it as v{art.version + 1}. Nothing is deleted.</span>
-							</span>
-							<span className="grow" />
-							<button
-								type="button"
-								className="btn btn-sm btn-primary"
-								onClick={async () => {
-									try {
-										await api.restore(art.id, art.viewing_version);
-										toast(`Restored as v${art.version + 1}`);
-										navigate(`/a/${art.id}`, { replace: true });
-									} catch (err) {
-										toast(err instanceof Error ? err.message : "Couldn't restore this version", "error");
-									}
-								}}
-							>
-								Restore this version
-							</button>
-							<Link href={`/a/${art.id}`} className="btn btn-sm">
-								Back to latest
-							</Link>
-						</div>
-					) : null}
-					<div className="preview-bar">
-						<div className="seg" role="group" aria-label="Preview width">
-							{(["desktop", "tablet", "phone"] as const).map((d) => (
-								<button
-									key={d}
-									type="button"
-									aria-pressed={device === d}
-									aria-label={`${d} width`}
-									title={`${d[0]!.toUpperCase()}${d.slice(1)} width`}
-									onClick={() => setDevice(d)}
-								>
-									<Icon name={d === "desktop" ? "monitor" : d} size={16} />
-								</button>
-							))}
-						</div>
-						<span className="preview-entry muted">{art.viewing_entry}</span>
-						<button
-							type="button"
-							className="icon-btn"
-							aria-label="Reload preview"
-							title="Reload preview"
-							// Refetch first: the preview URL is a capability that expires after 2 hours.
-							onClick={() => void reload().then(() => setFrameKey((k) => k + 1))}
-						>
-							<Icon name="refresh" size={16} />
-						</button>
-						<button
-							type="button"
-							className="icon-btn"
-							aria-label="Full screen"
-							title="Full screen"
-							onClick={() => frameWrap.current?.requestFullscreen?.()}
-						>
-							<Icon name="maximize" size={16} />
-						</button>
-					</div>
 					<div className={`frame-wrap frame-${device}`} ref={frameWrap}>
 						<iframe
 							key={`${art.preview_url}-${frameKey}`}
@@ -210,26 +200,40 @@ export function DetailPage({ id }: { id: string }) {
 					</div>
 				</section>
 
-				<aside className="panel">
-					<div className="tabs" role="tablist">
-						{(
-							[
-								["share", "Share"],
-								["details", "Details"],
-								["versions", `Versions · ${art.versions.length}`],
-								["files", `Files · ${art.file_count}`],
-							] as const
-						).map(([t, label]) => (
-							<button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
-								{label}
-							</button>
-						))}
+				{/* Stays mounted while closed, so unsaved sharing edits survive closing and reopening it. */}
+				<aside className="panel" id="detail-panel" aria-label="Artifact settings" hidden={panel.tab === null}>
+					<div className="panel-head">
+						<div className="tabs" role="tablist" aria-label="Artifact settings" onKeyDown={panel.onTabKey}>
+							{TABS.map(([t, label]) => (
+								<button
+									key={t}
+									id={`tab-${t}`}
+									type="button"
+									role="tab"
+									aria-selected={panel.shown === t}
+									aria-controls="detail-tabpanel"
+									tabIndex={panel.shown === t ? 0 : -1}
+									onClick={() => panel.select(t)}
+								>
+									{label}
+									{t === "versions" ? <span className="tab-count">{art.versions.length}</span> : null}
+									{t === "files" ? <span className="tab-count">{art.file_count}</span> : null}
+								</button>
+							))}
+						</div>
+						<button type="button" className="icon-btn" aria-label="Close panel" title="Close (Esc)" onClick={() => panel.close()}>
+							<Icon name="close" size={16} />
+						</button>
 					</div>
-					<div className="panel-body" role="tabpanel">
-						{tab === "share" ? <SharePanel art={art} onSaved={reload} /> : null}
-						{tab === "details" ? <DetailsPanel art={art} onSaved={reload} onDelete={() => setConfirmDelete(true)} /> : null}
-						{tab === "versions" ? <VersionsPanel art={art} /> : null}
-						{tab === "files" ? <FilesPanel art={art} /> : null}
+					<div className="panel-body" role="tabpanel" id="detail-tabpanel" aria-labelledby={`tab-${panel.shown}`}>
+						<div hidden={panel.shown !== "share"}>
+							<SharePanel art={art} onSaved={reload} />
+						</div>
+						{panel.shown === "details" ? (
+							<DetailsPanel art={art} onSaved={reload} onDelete={() => setConfirmDelete(true)} />
+						) : null}
+						{panel.shown === "versions" ? <VersionsPanel art={art} /> : null}
+						{panel.shown === "files" ? <FilesPanel art={art} /> : null}
 					</div>
 				</aside>
 			</div>
@@ -249,6 +253,71 @@ export function DetailPage({ id }: { id: string }) {
 			/>
 		</div>
 	);
+}
+
+const TABS: [Tab, string][] = [
+	["share", "Share"],
+	["details", "Details"],
+	["versions", "Versions"],
+	["files", "Files"],
+];
+
+/**
+ * The side card. It starts closed on each visit and opens from the top bar. It floats over the preview without
+ * resizing it (so the artifact's own layout doesn't shift underneath you) and doesn't block it. Esc or × closes it
+ * and returns focus to the button that opened it.
+ */
+function usePanel() {
+	const [tab, setTab] = useState<Tab | null>(null);
+	const [last, setLast] = useState<Tab>("details");
+	const opener = useRef<HTMLElement | null>(null);
+
+	const focusTab = (t: Tab) => requestAnimationFrame(() => document.getElementById(`tab-${t}`)?.focus());
+	const select = (t: Tab) => {
+		setTab(t);
+		setLast(t);
+	};
+	const close = useCallback(() => {
+		setTab(null);
+		const el = opener.current;
+		opener.current = null;
+		if (el?.isConnected) el.focus();
+	}, []);
+	// `want === null` is the panel button: toggle the card, reopening the last tab used.
+	const toggle = (want: Tab | null, from: HTMLElement) => {
+		if (tab !== null && (want === null || tab === want)) return close();
+		const target = want ?? last;
+		opener.current = from;
+		select(target);
+		focusTab(target);
+	};
+	const onTabKey = (e: React.KeyboardEvent) => {
+		const i = TABS.findIndex(([t]) => t === (tab ?? last));
+		let next = -1;
+		if (e.key === "ArrowRight") next = (i + 1) % TABS.length;
+		else if (e.key === "ArrowLeft") next = (i - 1 + TABS.length) % TABS.length;
+		else if (e.key === "Home") next = 0;
+		else if (e.key === "End") next = TABS.length - 1;
+		if (next < 0) return;
+		e.preventDefault();
+		const t = TABS[next]![0];
+		select(t);
+		focusTab(t);
+	};
+
+	useEffect(() => {
+		if (tab === null) return;
+		const onKey = (e: KeyboardEvent) => {
+			// Confirmation dialogs handle their own Esc; the title field uses Esc to undo an edit.
+			if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("dialog[open]")) return;
+			if ((e.target as HTMLElement | null)?.classList.contains("title-input")) return;
+			close();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [tab, close]);
+
+	return { tab, shown: tab ?? last, select, close, toggle, onTabKey };
 }
 
 function TitleEditor({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void }) {

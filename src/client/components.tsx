@@ -120,6 +120,18 @@ const PATHS: Record<string, ReactNode> = {
 		</>
 	),
 	plug: <path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0V8ZM12 17v5" />,
+	sidebar: (
+		<>
+			<rect x="3" y="4" width="18" height="16" rx="2" />
+			<path d="M9 4v16" />
+		</>
+	),
+	panel: (
+		<>
+			<rect x="3" y="4" width="18" height="16" rx="2" />
+			<path d="M15 4v16" />
+		</>
+	),
 	// Kind glyphs
 	html: <path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 5l-4 14" />,
 	markdown: (

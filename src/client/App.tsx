@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { ApiError, api, type Me } from "./api.ts";
 import { Avatar, Icon } from "./components.tsx";
 import { AdminPage } from "./pages/Admin.tsx";
@@ -93,6 +93,8 @@ function Shell() {
 	const { pathname, search } = useLocation();
 	const visibility = search.get("visibility");
 	const name = me.user.name || me.user.email || "Account";
+	const onDetail = match("/a/:id", pathname) !== null;
+	const [collapsed, toggleSidebar] = useSidebarCollapsed(onDetail);
 
 	let page: React.ReactNode;
 	let params: Record<string, string> | null;
@@ -110,33 +112,64 @@ function Shell() {
 	];
 
 	return (
-		<div className="shell">
-			<aside className="sidebar">
-				<Link href="/" className="brand">
-					<img src="/icon.svg" alt="" width={26} height={26} />
-					<span>Artifacts</span>
-				</Link>
+		<div className={collapsed ? "shell collapsed" : "shell"}>
+			<aside className="sidebar" id="sidebar">
+				<div className="sidebar-head">
+					<Link href="/" className="brand" title={collapsed ? "Artifacts" : undefined}>
+						<img src="/icon.svg" alt="" width={26} height={26} />
+						<span>Artifacts</span>
+					</Link>
+					<button
+						type="button"
+						className="icon-btn sidebar-toggle"
+						aria-controls="sidebar"
+						aria-expanded={!collapsed}
+						aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+						title={`${collapsed ? "Expand" : "Collapse"} sidebar ([)`}
+						onClick={toggleSidebar}
+					>
+						<Icon name="sidebar" />
+					</button>
+				</div>
 				<nav aria-label="Main">
 					{nav.map((n) => (
-						<Link key={n.href} href={n.href} className="nav-item" aria-current={n.active ? "page" : undefined}>
+						<Link
+							key={n.href}
+							href={n.href}
+							className="nav-item"
+							aria-current={n.active ? "page" : undefined}
+							title={collapsed ? n.label : undefined}
+						>
 							<Icon name={n.icon} />
 							<span>{n.label}</span>
 						</Link>
 					))}
 					<div className="nav-sep" />
-					<Link href="/settings" className="nav-item" aria-current={pathname === "/settings" ? "page" : undefined}>
+					<Link
+						href="/settings"
+						className="nav-item"
+						aria-current={pathname === "/settings" ? "page" : undefined}
+						title={collapsed ? "Connect & settings" : undefined}
+					>
 						<Icon name="plug" />
 						<span>Connect &amp; settings</span>
 					</Link>
 					{me.user.is_admin ? (
-						<Link href="/admin" className="nav-item" aria-current={pathname === "/admin" ? "page" : undefined}>
+						<Link
+							href="/admin"
+							className="nav-item"
+							aria-current={pathname === "/admin" ? "page" : undefined}
+							title={collapsed ? "Admin" : undefined}
+						>
 							<Icon name="shield" />
 							<span>Admin</span>
 						</Link>
 					) : null}
 				</nav>
 				<div className="sidebar-user">
-					<Avatar name={name} src={me.user.picture} size={30} />
+					<span className="sidebar-avatar" title={collapsed ? name : undefined}>
+						<Avatar name={name} src={me.user.picture} size={30} />
+					</span>
 					<div className="sidebar-user-text">
 						<strong>{me.user.name || me.user.email}</strong>
 						{me.user.name && me.user.email ? <span>{me.user.email}</span> : null}
@@ -157,4 +190,50 @@ function Shell() {
 			<div className="main">{page}</div>
 		</div>
 	);
+}
+
+// The artifact page defaults to the icon rail so the preview gets the room; other pages default to the full
+// sidebar. Each remembers its own choice.
+const SIDEBAR_KEYS = { main: "artifacts:sidebar-collapsed", detail: "artifacts:sidebar-collapsed:detail" };
+
+function readFlag(key: string, fallback: boolean) {
+	try {
+		const v = localStorage.getItem(key);
+		return v === null ? fallback : v === "1";
+	} catch {
+		return fallback;
+	}
+}
+
+/** Collapsed state of the desktop sidebar, toggled by the button or "[" outside text fields. */
+function useSidebarCollapsed(onDetail: boolean): [boolean, () => void] {
+	const [state, setState] = useState(() => ({
+		main: readFlag(SIDEBAR_KEYS.main, false),
+		detail: readFlag(SIDEBAR_KEYS.detail, true),
+	}));
+	const which: keyof typeof SIDEBAR_KEYS = onDetail ? "detail" : "main";
+	const whichRef = useRef(which);
+	whichRef.current = which;
+	const toggle = useCallback(() => {
+		const w = whichRef.current;
+		setState((s) => {
+			const next = { ...s, [w]: !s[w] };
+			try {
+				localStorage.setItem(SIDEBAR_KEYS[w], next[w] ? "1" : "0");
+			} catch {}
+			return next;
+		});
+	}, []);
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key !== "[" || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+			const t = e.target as HTMLElement | null;
+			if (t?.closest("input, textarea, select, [contenteditable=''], [contenteditable='true']")) return;
+			e.preventDefault();
+			toggle();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [toggle]);
+	return [state[which], toggle];
 }
