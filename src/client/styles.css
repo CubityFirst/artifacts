@@ -5,18 +5,20 @@
 	--sunken: #ebe7df;
 	--fg: #1c1a17;
 	--fg-2: #45413b;
-	--muted: #79736a;
+	--muted: #6f695f;
 	--line: #e3ded5;
 	--line-strong: #cfc8bc;
 	--accent: #c2410c;
 	--accent-fg: #ffffff;
 	--accent-soft: #fbe9dd;
-	--ok: #15803d;
+	--ok: #166534;
 	--ok-soft: #e3f3e8;
-	--warn: #a16207;
+	--warn: #854d0e;
 	--warn-soft: #fbf1d6;
 	--danger: #b91c1c;
 	--danger-soft: #fbe5e3;
+	/* Fill for solid danger buttons and toasts: white text on it must pass AA in both themes. */
+	--danger-solid: #b91c1c;
 	--focus: #ea580c;
 	--shadow-sm: 0 1px 2px rgb(28 26 23 / 0.06);
 	--shadow: 0 1px 2px rgb(28 26 23 / 0.05), 0 6px 24px rgb(28 26 23 / 0.07);
@@ -48,6 +50,7 @@
 		--warn-soft: #2f2710;
 		--danger: #f87171;
 		--danger-soft: #3a1716;
+		--danger-solid: #dc2626;
 		--focus: #fb923c;
 		--shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
 		--shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 28px rgb(0 0 0 / 0.35);
@@ -112,6 +115,8 @@ textarea {
 }
 .stack {
 	display: grid;
+	/* minmax(0, …): long unbreakable children (share URLs, code) must not widen the column. */
+	grid-template-columns: minmax(0, 1fr);
 	gap: 16px;
 }
 
@@ -159,12 +164,12 @@ textarea {
 	border-color: var(--fg-2);
 }
 .btn-danger {
-	background: var(--danger);
-	border-color: var(--danger);
+	background: var(--danger-solid);
+	border-color: var(--danger-solid);
 	color: #fff;
 }
 .btn-danger:hover {
-	background: var(--danger);
+	background: var(--danger-solid);
 	filter: brightness(1.08);
 }
 .btn-danger-ghost {
@@ -175,6 +180,15 @@ textarea {
 }
 .btn-danger-ghost:hover {
 	background: var(--danger-soft);
+}
+.btn-quiet,
+.btn-quiet:disabled {
+	background: transparent;
+	border-color: var(--line);
+	box-shadow: none;
+	color: var(--muted);
+	opacity: 1;
+	cursor: default;
 }
 .btn-sm {
 	height: 28px;
@@ -233,6 +247,24 @@ textarea.input {
 	display: grid;
 	gap: 6px;
 }
+.input-affix {
+	position: relative;
+	display: grid;
+}
+.input-affix .input {
+	padding-right: 40px;
+}
+.input-affix .icon-btn {
+	position: absolute;
+	right: 2px;
+	top: 2px;
+}
+.hint {
+	margin: 0;
+	font-size: 12.5px;
+	color: var(--muted);
+}
+.field > label,
 .field > span {
 	font-weight: 550;
 	font-size: 13px;
@@ -273,7 +305,9 @@ textarea.input {
 }
 .splash p {
 	color: var(--muted);
-	margin: 0;
+	margin: 0 0 8px;
+	max-width: 340px;
+	text-wrap: pretty;
 }
 .signin {
 	min-height: 100%;
@@ -309,7 +343,9 @@ textarea.input {
 }
 .signin-error {
 	width: 100%;
-	padding: 8px 12px;
+	padding: 10px 12px;
+	text-align: left;
+	font-size: 13.5px;
 	border-radius: var(--radius-sm);
 	background: var(--danger-soft);
 	color: var(--danger) !important;
@@ -477,6 +513,27 @@ textarea.input {
 	height: 100%;
 }
 
+.search[hidden],
+.toolbar[hidden] {
+	display: none;
+}
+.kbd {
+	display: inline-grid;
+	place-items: center;
+	min-width: 20px;
+	height: 20px;
+	padding: 0 5px;
+	border-radius: 5px;
+	border: 1px solid var(--line-strong);
+	border-bottom-width: 2px;
+	font: 600 11px var(--mono);
+	color: var(--muted);
+}
+@media (hover: none) {
+	.kbd {
+		display: none;
+	}
+}
 .toolbar {
 	display: flex;
 	gap: 12px;
@@ -617,6 +674,47 @@ textarea.input {
 	gap: 6px;
 	border-top: 1px solid var(--line);
 }
+.card-status {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	z-index: 1;
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	height: 22px;
+	min-width: 22px;
+	justify-content: center;
+	padding: 0 7px;
+	border-radius: 999px;
+	font-size: 11.5px;
+	font-weight: 600;
+	background: var(--surface);
+	color: var(--fg-2);
+	box-shadow: var(--shadow);
+}
+.card-status-private {
+	padding: 0;
+	color: var(--muted);
+}
+.card-status-link {
+	color: var(--ok);
+}
+.card-status-password {
+	color: var(--warn);
+}
+.card-status-expired {
+	color: var(--muted);
+	text-decoration: line-through;
+}
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
 .card-body h3 {
 	font-size: 14.5px;
 	font-weight: 600;
@@ -691,6 +789,15 @@ textarea.input {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
+@media (prefers-color-scheme: dark) {
+	/* Most published pages are light; dim them so a dark gallery isn't a wall of white tiles. */
+	.thumb iframe {
+		filter: brightness(0.78) saturate(0.9);
+	}
+	.card:hover .thumb iframe {
+		filter: none;
+	}
+}
 .thumb iframe {
 	position: absolute;
 	top: 0;
@@ -739,6 +846,11 @@ textarea.input {
 .sk-meta {
 	width: 45%;
 }
+.sk-frame {
+	width: 100%;
+	height: 100%;
+	border-radius: 10px;
+}
 @keyframes shimmer {
 	from {
 		background-position: 100% 0;
@@ -783,6 +895,41 @@ textarea.input {
 .empty-onboard svg {
 	color: var(--accent);
 }
+.onboard-steps {
+	counter-reset: step;
+	list-style: none;
+	margin: 6px 0 14px;
+	padding: 0;
+	display: grid;
+	gap: 12px;
+	width: min(420px, 100%);
+	text-align: left;
+}
+.onboard-steps li {
+	counter-increment: step;
+	display: grid;
+	grid-template-columns: 26px 1fr;
+	column-gap: 12px;
+}
+.onboard-steps li::before {
+	content: counter(step);
+	grid-row: span 2;
+	display: grid;
+	place-items: center;
+	width: 26px;
+	height: 26px;
+	border-radius: 50%;
+	background: var(--accent-soft);
+	color: var(--accent);
+	font: 600 12.5px var(--font);
+}
+.onboard-steps strong {
+	color: var(--fg);
+	font-weight: 600;
+}
+.onboard-steps span {
+	font-size: 13px;
+}
 
 /* Detail ------------------------------------------------------------------ */
 
@@ -819,13 +966,38 @@ textarea.input {
 	border-radius: 6px;
 	text-overflow: ellipsis;
 }
+.title-edit {
+	position: relative;
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}
+.title-edit-icon {
+	position: absolute;
+	right: 8px;
+	color: var(--muted);
+	opacity: 0.55;
+	pointer-events: none;
+	transition: opacity 0.12s;
+}
+.title-input {
+	padding-right: 28px;
+}
 .title-input:hover {
 	border-color: var(--line);
+	background: var(--surface-2);
+}
+.title-edit:hover .title-edit-icon {
+	opacity: 1;
 }
 .title-input:focus {
-	outline: none;
-	border-color: var(--focus);
+	outline: 2px solid var(--focus);
+	outline-offset: -1px;
+	border-color: transparent;
 	background: var(--surface);
+}
+.title-input:focus + .title-edit-icon {
+	opacity: 0;
 }
 .detail-sub {
 	display: flex;
@@ -842,7 +1014,7 @@ textarea.input {
 	flex: 1;
 	min-height: 0;
 	display: grid;
-	grid-template-columns: 1fr 360px;
+	grid-template-columns: minmax(0, 1fr) 360px;
 }
 .preview {
 	display: flex;
@@ -860,6 +1032,15 @@ textarea.input {
 	color: var(--warn);
 	font-weight: 550;
 	flex-wrap: wrap;
+}
+.banner-text {
+	display: grid;
+	line-height: 1.35;
+}
+.banner-text span {
+	font-weight: 450;
+	font-size: 12.5px;
+	color: var(--fg-2);
 }
 .preview-bar {
 	display: flex;
@@ -937,6 +1118,7 @@ textarea.input {
 .panel {
 	display: flex;
 	flex-direction: column;
+	min-width: 0;
 	min-height: 0;
 	border-left: 1px solid var(--line);
 	background: var(--surface);
@@ -990,6 +1172,16 @@ textarea.input {
 	background: var(--ok-soft);
 	border: 1px solid transparent;
 }
+.share-link-off {
+	padding: 10px 12px;
+	background: var(--surface-2);
+	color: var(--fg-2);
+	font-size: 13px;
+}
+.share-link-off svg {
+	flex: none;
+	color: var(--muted);
+}
 .share-url {
 	flex: 1;
 	min-width: 0;
@@ -1041,6 +1233,27 @@ textarea.input {
 }
 .radio-card > span .muted {
 	font-size: 12.5px;
+}
+.expiry-presets .chip {
+	height: 28px;
+	font-size: 13px;
+}
+.field-label-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.saved {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 12px;
+	font-weight: 450;
+	color: var(--muted);
+}
+.saved svg {
+	color: var(--ok);
 }
 .note {
 	margin: 0;
@@ -1128,11 +1341,25 @@ textarea.input {
 .version-text .muted {
 	font-size: 12px;
 }
+/* Wrap between parts, never inside one ("claude-/opus-5-5"). */
+.version-meta {
+	display: flex;
+	flex-wrap: wrap;
+	column-gap: 6px;
+}
+.version-meta > span {
+	white-space: nowrap;
+}
+.version-meta > span + span::before {
+	content: "·";
+	margin-right: 6px;
+}
 .files li {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	padding: 4px 4px 4px 8px;
+	gap: 10px;
+	min-height: 40px;
+	padding: 4px 4px 4px 10px;
 	border-radius: var(--radius-sm);
 	color: var(--muted);
 }
@@ -1185,6 +1412,20 @@ textarea.input {
 }
 .token-reveal p {
 	margin: 0;
+	color: var(--fg-2);
+}
+.token-reveal-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--ok);
+}
+.token-reveal-head strong {
+	color: var(--fg);
+}
+.token-reveal-foot {
+	display: flex;
+	justify-content: flex-end;
 }
 .token-value {
 	flex: 1;
@@ -1252,12 +1493,22 @@ textarea.input {
 }
 .profile {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 14px;
 }
+/* Sign out drops to its own line on narrow screens rather than squeezing the email. */
 .profile > div {
+	flex: 1 1 200px;
 	display: grid;
 	gap: 2px;
+	min-width: 0;
+}
+.profile .muted {
+	overflow-wrap: anywhere;
+}
+.profile > .btn {
+	flex: none;
 }
 .role-list {
 	margin-top: 4px;
@@ -1362,9 +1613,24 @@ textarea.input {
 	font-size: 17px;
 	margin-bottom: 8px;
 }
+.dialog-icon {
+	display: grid;
+	place-items: center;
+	width: 40px;
+	height: 40px;
+	margin-bottom: 14px;
+	border-radius: 50%;
+	background: var(--danger-soft);
+	color: var(--danger);
+}
 .dialog-body {
 	color: var(--fg-2);
 	margin-bottom: 20px;
+}
+.dialog-body code.strike {
+	text-decoration: line-through;
+	overflow-wrap: anywhere;
+	color: var(--muted);
 }
 .dialog-actions {
 	display: flex;
@@ -1395,8 +1661,23 @@ textarea.input {
 	animation: toast-in 0.2s ease-out;
 }
 .toast-error {
-	background: var(--danger);
+	background: var(--danger-solid);
 	color: #fff;
+	border-radius: 12px;
+	max-width: min(520px, calc(100vw - 32px));
+	pointer-events: auto;
+}
+.toast-close {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	margin-right: -6px;
+	border: 0;
+	border-radius: 6px;
+	background: rgb(255 255 255 / 0.16);
+	color: inherit;
+	cursor: pointer;
 }
 @keyframes toast-in {
 	from {
@@ -1409,12 +1690,14 @@ textarea.input {
 
 @media (max-width: 1100px) {
 	.detail-body {
-		grid-template-columns: 1fr 320px;
+		grid-template-columns: minmax(0, 1fr) 320px;
 	}
 }
 @media (max-width: 860px) {
 	.shell {
 		grid-template-columns: 1fr;
+		/* Rows hug their content; without this the header stretches on short pages. */
+		grid-template-rows: auto 1fr;
 	}
 	.sidebar {
 		position: sticky;
@@ -1428,7 +1711,12 @@ textarea.input {
 		border-bottom: 1px solid var(--line);
 	}
 	.brand span {
-		display: none;
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.sidebar nav {
 		display: flex;
@@ -1439,10 +1727,18 @@ textarea.input {
 	.nav-item {
 		flex: none;
 	}
-	.nav-item span,
 	.nav-sep,
 	.sidebar-user-text {
 		display: none;
+	}
+	/* Icon-only on phones, but keep the names for screen readers. */
+	.nav-item span {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.sidebar-user {
 		margin: 0;
@@ -1475,10 +1771,11 @@ textarea.input {
 		flex: 1;
 	}
 	.detail-body {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
 	}
 	.preview {
-		height: 70vh;
+		/* Leave the Share tab in reach on a phone; Full screen is one tap away. */
+		height: min(52vh, 460px);
 	}
 	.frame-wrap {
 		padding: 8px;
@@ -1492,5 +1789,87 @@ textarea.input {
 	}
 	.card-check {
 		opacity: 1;
+	}
+	/* The sticky header would cover a top-pinned bar; dock it to the thumb zone instead. */
+	.selection-bar {
+		position: fixed;
+		top: auto;
+		left: 12px;
+		right: 12px;
+		bottom: max(12px, env(safe-area-inset-bottom));
+		z-index: 20;
+		margin: 0;
+		box-shadow: var(--shadow-lg);
+	}
+	/* Seven client tabs don't fit a phone: wrap them as pills instead of a hidden scroller. */
+	.tabs-inline {
+		flex-wrap: wrap;
+		gap: 6px;
+		border-bottom: 0;
+	}
+	.tabs-inline button {
+		height: 32px;
+		padding: 0 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+	}
+	.tabs-inline button[aria-selected="true"] {
+		background: var(--fg);
+		border-color: var(--fg);
+		color: var(--bg);
+	}
+	.tabs-inline button[aria-selected="true"]::after {
+		display: none;
+	}
+	/* Wrap long commands instead of hiding the end of them off-screen; Copy still copies the exact text. */
+	.snippet pre {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	/* Admin table → one card per user; the numbers carry their own labels. */
+	.table thead {
+		display: none;
+	}
+	.table,
+	.table tbody,
+	.table tr {
+		display: block;
+	}
+	.table tr {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 8px 12px;
+		padding: 14px;
+		border-bottom: 1px solid var(--line);
+	}
+	.table tr:last-child {
+		border-bottom: 0;
+	}
+	.table td {
+		padding: 0;
+		border: 0;
+		min-width: 0;
+	}
+	.table td:first-child,
+	.table td:nth-child(2) {
+		grid-column: 1 / -1;
+	}
+	.table td[data-label] {
+		text-align: left;
+		display: grid;
+		font-size: 13px;
+	}
+	.table td[data-label]::before {
+		content: attr(data-label);
+		font-size: 11.5px;
+		color: var(--muted);
+	}
+	.table .actions {
+		grid-column: 1 / -1;
+		text-align: left;
+	}
+	.user-cell .muted {
+		overflow-wrap: anywhere;
 	}
 }

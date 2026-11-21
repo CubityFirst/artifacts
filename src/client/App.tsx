@@ -24,7 +24,14 @@ export function App() {
 			});
 	}, []);
 
-	if (error) return <Splash title="Can't reach the server" detail={error} />;
+	if (error)
+		return (
+			<Splash
+				title="Can't reach Artifacts"
+				detail="Check your connection, then try again. If it keeps happening, the service may be down."
+				retry
+			/>
+		);
 	if (me === undefined) return <Splash />;
 	if (me === null) return <SignIn />;
 	return (
@@ -34,15 +41,29 @@ export function App() {
 	);
 }
 
-function Splash({ title, detail }: { title?: string; detail?: string }) {
+function Splash({ title, detail, retry }: { title?: string; detail?: string; retry?: boolean }) {
 	return (
-		<div className="splash">
+		<div className="splash" role={title ? "alert" : undefined} aria-busy={title ? undefined : true}>
 			<img src="/icon.svg" alt="" width={40} height={40} />
 			{title ? <h1>{title}</h1> : null}
 			{detail ? <p>{detail}</p> : null}
+			{retry ? (
+				<button type="button" className="btn btn-primary" onClick={() => location.reload()}>
+					Try again
+				</button>
+			) : null}
 		</div>
 	);
 }
+
+/** Provider error codes come back raw in ?auth_error; translate the common ones. */
+const AUTH_ERRORS: Record<string, string> = {
+	access_denied: "Sign-in was cancelled, or this account isn't allowed in.",
+	login_required: "Your cubityfir.st session ended. Sign in again.",
+	consent_required: "Sign-in needs your approval on cubityfir.st. Try again.",
+	server_error: "cubityfir.st had a problem signing you in. Try again in a moment.",
+	temporarily_unavailable: "cubityfir.st is busy right now. Try again in a moment.",
+};
 
 function SignIn() {
 	const { pathname, search } = useLocation();
@@ -56,11 +77,11 @@ function SignIn() {
 				<p>Publish pages, documents and media from any AI assistant, then browse, share and manage them in one place.</p>
 				{authError ? (
 					<p className="signin-error" role="alert">
-						{authError}
+						<strong>Couldn't sign you in.</strong> {Object.hasOwn(AUTH_ERRORS, authError) ? AUTH_ERRORS[authError] : authError}
 					</p>
 				) : null}
 				<a className="btn btn-primary btn-lg" href={`/auth/login?return_to=${encodeURIComponent(returnTo)}`}>
-					Sign in with cubityfir.st
+					{authError ? "Try again" : "Sign in with cubityfir.st"}
 				</a>
 			</div>
 		</main>

@@ -97,6 +97,21 @@ const PATHS: Record<string, ReactNode> = {
 		</>
 	),
 	logout: <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4" />,
+	alert: (
+		<>
+			<circle cx="12" cy="12" r="9" />
+			<path d="M12 7.5v5.5M12 16.5v.01" />
+		</>
+	),
+	eye: (
+		<>
+			<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" />
+			<circle cx="12" cy="12" r="3" />
+		</>
+	),
+	eyeOff: <path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17 17 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2" />,
+	pencil: <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4ZM13.5 6.5l4 4" />,
+	refresh: <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" />,
 	plus: <path d="M12 5v14M5 12h14" />,
 	users: (
 		<>
@@ -201,19 +216,29 @@ const ToastContext = createContext<(message: string, tone?: Toast["tone"]) => vo
 
 export function ToastProvider({ children }: { children: ReactNode }) {
 	const [toasts, setToasts] = useState<Toast[]>([]);
-	const push = useCallback((message: string, tone: Toast["tone"] = "ok") => {
-		const id = Date.now() + Math.random();
-		setToasts((t) => [...t, { id, message, tone }]);
-		setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === "error" ? 6000 : 2800);
-	}, []);
+	const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+	const push = useCallback(
+		(message: string, tone: Toast["tone"] = "ok") => {
+			const id = Date.now() + Math.random();
+			setToasts((t) => [...t, { id, message, tone }]);
+			// Errors stay until dismissed or 12s: long enough to read a real message.
+			setTimeout(() => dismiss(id), tone === "error" ? 12000 : 2800);
+		},
+		[dismiss],
+	);
 	return (
 		<ToastContext.Provider value={push}>
 			{children}
-			<div className="toasts" role="status" aria-live="polite">
+			<div className="toasts" aria-live="polite">
 				{toasts.map((t) => (
-					<div key={t.id} className={`toast toast-${t.tone}`}>
-						{t.tone === "ok" ? <Icon name="check" size={16} /> : null}
-						{t.message}
+					<div key={t.id} className={`toast toast-${t.tone}`} role={t.tone === "error" ? "alert" : "status"}>
+						<Icon name={t.tone === "ok" ? "check" : "alert"} size={16} />
+						<span>{t.message}</span>
+						{t.tone === "error" ? (
+							<button type="button" className="toast-close" aria-label="Dismiss" onClick={() => dismiss(t.id)}>
+								<Icon name="close" size={14} />
+							</button>
+						) : null}
 					</div>
 				))}
 			</div>
@@ -280,26 +305,37 @@ export function ConfirmDialog({
 	onClose: () => void;
 }) {
 	const ref = useRef<HTMLDialogElement>(null);
+	const cancelRef = useRef<HTMLButtonElement>(null);
+	const confirmRef = useRef<HTMLButtonElement>(null);
 	const [busy, setBusy] = useState(false);
 	useEffect(() => {
 		const d = ref.current;
 		if (!d) return;
-		if (open && !d.open) d.showModal();
+		if (open && !d.open) {
+			d.showModal();
+			// React autoFocus only runs on mount, while the dialog is still closed. Enter on a destructive dialog should be the safe choice.
+			(destructive ? cancelRef : confirmRef).current?.focus();
+		}
 		if (!open && d.open) d.close();
 	}, [open]);
 	return (
-		<dialog ref={ref} className="dialog" onClose={onClose} onCancel={onClose}>
+		<dialog ref={ref} className={destructive ? "dialog dialog-danger" : "dialog"} onClose={onClose} onCancel={onClose}>
+			{destructive ? (
+				<span className="dialog-icon" aria-hidden="true">
+					<Icon name="alert" size={20} />
+				</span>
+			) : null}
 			<h2>{title}</h2>
 			<div className="dialog-body">{body}</div>
 			<div className="dialog-actions">
-				<button type="button" className="btn" onClick={onClose} disabled={busy}>
+				<button ref={cancelRef} type="button" className="btn" onClick={onClose} disabled={busy}>
 					Cancel
 				</button>
 				<button
 					type="button"
 					className={destructive ? "btn btn-danger" : "btn btn-primary"}
+					ref={confirmRef}
 					disabled={busy}
-					autoFocus
 					onClick={async () => {
 						setBusy(true);
 						try {

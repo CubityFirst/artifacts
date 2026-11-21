@@ -13,7 +13,9 @@ export async function handleContent(request: Request, env: Env): Promise<Respons
 	if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "POST") {
 		return new Response("Method not allowed", { status: 405 });
 	}
-	if (url.pathname === "/" || url.pathname === "") return renderMessage("Artifacts", "Nothing to see here.", 404);
+	if (url.pathname === "/" || url.pathname === "") {
+		return renderMessage("Artifacts", "This address hosts shared pages. Open the full link you were sent to view one.", 404);
+	}
 	if (url.pathname === "/robots.txt") return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain" } });
 
 	const segments = url.pathname.split("/");
@@ -22,19 +24,31 @@ export async function handleContent(request: Request, env: Env): Promise<Respons
 		const base = `/t/${segments[2]}/`;
 		if (segments.length === 3) return Response.redirect(`${url.origin}${base}${url.search}`, 301);
 		const token = await verifyToken<ContentToken>(env.SESSION_SECRET, segments[2]);
-		if (!token || token.e < Date.now()) return renderMessage("Link expired", "Ask the owner for a new link.", 410);
+		// Capability links are short-lived by design (2h previews, 12h after a password). Say so, and point back to the
+		// durable share link instead of blaming the owner.
+		if (!token || token.e < Date.now()) {
+			return renderMessage(
+				"This link has timed out",
+				"Pages opened this way only stay open for a while. Open the share link again, or reopen the preview from your dashboard.",
+				410,
+			);
+		}
 		const art = await env.DB.prepare(`SELECT * FROM artifacts WHERE id = ?`).bind(token.a).first<ArtifactRow>();
 		if (!art || art.share_epoch !== token.s) return renderMessage("Link expired", "Ask the owner for a new link.", 410);
 		return serveFile(request, env, art, token.v || art.current_version, rest(segments, 3), { privateCache: true });
 	}
 
 	const slug = segments[1];
-	if (!/^[0-9A-Za-z]{6,32}$/.test(slug)) return renderMessage("Not found", "There's no artifact at this address.", 404);
+	if (!/^[0-9A-Za-z]{6,32}$/.test(slug)) {
+		return renderMessage("Nothing here", "This link may be mistyped, or the owner stopped sharing it.", 404);
+	}
 	if (segments.length === 2) return Response.redirect(`${url.origin}/${slug}/${url.search}`, 301);
 	const art = await env.DB.prepare(`SELECT * FROM artifacts WHERE slug = ?`).bind(slug).first<ArtifactRow>();
-	if (!art || art.visibility === "private") return renderMessage("Not found", "There's no artifact at this address.", 404);
+	if (!art || art.visibility === "private") {
+		return renderMessage("Nothing here", "This link may be mistyped, or the owner stopped sharing it.", 404);
+	}
 	if (art.expires_at !== null && art.expires_at <= Date.now()) {
-		return renderMessage("Link expired", "This share link is no longer active.", 410);
+		return renderMessage("This link has expired", "The owner set it to stop working. Ask them for a new link if you still need it.", 410);
 	}
 	if (art.visibility === "password") {
 		const action = `/${slug}/`;
@@ -119,12 +133,15 @@ async function serveFile(
 		if (viewer) {
 			let html: string;
 			if (viewer === "media") {
-				html = renderMedia(art.title, kind, file.path, file.content_type, rawHref);
+				html = renderMedia(art.title, kind, file.path, file.content_type, rawHref, file.size);
 			} else {
 				const obj = await env.FILES.get(blobKey(art.id, file.sha256));
 				if (!obj) return renderMessage("Missing", "This file's contents are missing.", 404);
 				const text = await obj.text();
-				html = kind === "markdown" ? renderMarkdown(art.title, text) : renderCode(art.title, file.path, text, rawHref);
+				html =
+					kind === "markdown"
+						? renderMarkdown(art.title, text, file.path, rawHref)
+						: renderCode(art.title, file.path, text, rawHref);
 			}
 			return new Response(request.method === "HEAD" ? null : html, {
 				headers: { ...COMMON_HEADERS, "content-type": "text/html; charset=utf-8", "cache-control": cacheControl },
