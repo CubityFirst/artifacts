@@ -8,7 +8,6 @@ import {
 	sourceLabel,
 	timeAgo,
 	type Visibility,
-	VISIBILITY_LABEL,
 } from "../api.ts";
 import { ConfirmDialog, Icon, kindIcon, Thumbnail, useToast } from "../components.tsx";
 import { Link, navigate, useLocation } from "../router.tsx";
@@ -36,7 +35,33 @@ export function GalleryPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [selected, setSelected] = useState<Set<string>>(new Set());
 	const [confirm, setConfirm] = useState(false);
+	const [confirmShare, setConfirmShare] = useState(false);
+	const [busy, setBusy] = useState(false);
+	const bulk = async (run: () => Promise<string>) => {
+		setBusy(true);
+		try {
+			toast(await run());
+			void load(0);
+		} catch (err) {
+			toast(err instanceof Error ? err.message : "Couldn't update the selection", "error");
+		} finally {
+			setBusy(false);
+		}
+	};
 	const reqId = useRef(0);
+	const searchRef = useRef<HTMLInputElement>(null);
+
+	// "/" jumps to search, as in most tools people already use.
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			const t = e.target as HTMLElement;
+			if (e.key !== "/" || e.metaKey || e.ctrlKey || t.closest("input, textarea, select, [contenteditable]")) return;
+			e.preventDefault();
+			searchRef.current?.focus();
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, []);
 
 	const setParam = useCallback((key: string, value: string) => {
 		const next = new URLSearchParams(location.search);
@@ -44,6 +69,11 @@ export function GalleryPage() {
 		else next.delete(key);
 		navigate(`/${next.size ? `?${next}` : ""}`, { replace: key === "q" });
 	}, []);
+
+	// URL → search box, when the URL changes from elsewhere ("Clear filters", back/forward, the nav).
+	useEffect(() => {
+		setQuery((cur) => (cur.trim() === q ? cur : q));
+	}, [q]);
 
 	// Debounced search box → URL
 	useEffect(() => {
@@ -93,31 +123,54 @@ export function GalleryPage() {
 			return next;
 		});
 
-	const title = visibility ? VISIBILITY_LABEL[visibility] : "All artifacts";
+	const VIEW: Record<Visibility, [string, string]> = {
+		link: ["Shared", "Anyone with the link can open these"],
+		password: ["Password", "Visitors enter a password first"],
+		private: ["Private", "Only you can open these"],
+	};
+	const title = visibility ? VIEW[visibility][0] : "All artifacts";
+	const filtered = !!(q || kind || visibility);
 	const selecting = selected.size > 0;
+	// A brand-new library has nothing to search, filter or sort: lead with the onboarding instead.
+	const emptyLibrary = !!data && !error && totals.count === 0 && !filtered;
 
 	return (
 		<div className="page">
 			<header className="page-head">
 				<div>
 					<h1>{title}</h1>
-					<p className="muted">
-						{totals.count} {totals.count === 1 ? "artifact" : "artifacts"} · {formatBytes(totals.bytes)}
-					</p>
+					{emptyLibrary ? null : (
+						<p className="muted" aria-live="polite">
+							{!data
+								? " "
+								: `${visibility ? `${VIEW[visibility][1]} · ` : ""}${
+										filtered
+											? `${data.total} of ${totals.count} ${totals.count === 1 ? "artifact" : "artifacts"}`
+											: `${totals.count} ${totals.count === 1 ? "artifact" : "artifacts"} · ${formatBytes(totals.bytes)}`
+									}`}
+						</p>
+					)}
 				</div>
-				<label className="search">
+				<label className="search" hidden={emptyLibrary}>
 					<Icon name="search" size={16} />
 					<input
+						ref={searchRef}
 						type="search"
 						placeholder="Search titles, descriptions, files"
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
 						aria-label="Search artifacts"
+						aria-keyshortcuts="/"
 					/>
+					{query ? null : (
+						<kbd className="kbd" aria-hidden="true">
+							/
+						</kbd>
+					)}
 				</label>
 			</header>
 
-			<div className="toolbar">
+			<div className="toolbar" hidden={emptyLibrary}>
 				<div className="chips" role="group" aria-label="Filter by type">
 					<button type="button" className="chip" aria-pressed={!kind} onClick={() => setParam("kind", "")}>
 						All
@@ -148,29 +201,27 @@ export function GalleryPage() {
 			{selecting ? (
 				<div className="selection-bar" role="region" aria-label="Selection">
 					<strong>{selected.size} selected</strong>
-					<button type="button" className="btn" onClick={() => setSelected(new Set(items.map((i) => i.id)))}>
-						Select all {items.length}
-					</button>
+					{selected.size < items.length ? (
+						<button type="button" className="btn" onClick={() => setSelected(new Set(items.map((i) => i.id)))}>
+							{data && data.total > items.length ? `Select the ${items.length} shown` : `Select all ${items.length}`}
+						</button>
+					) : (
+						<span className="muted">All {items.length} shown are selected</span>
+					)}
 					<span className="grow" />
-					<button
-						type="button"
-						className="btn"
-						onClick={async () => {
-							await api.bulkShare([...selected], "link");
-							toast(`Shared ${selected.size} by link`);
-							void load(0);
-						}}
-					>
+					<button type="button" className="btn" disabled={busy} onClick={() => setConfirmShare(true)}>
 						<Icon name="globe" size={16} /> Share by link
 					</button>
 					<button
 						type="button"
 						className="btn"
-						onClick={async () => {
-							await api.bulkShare([...selected], "private");
-							toast(`Made ${selected.size} private`);
-							void load(0);
-						}}
+						disabled={busy}
+						onClick={() =>
+							bulk(async () => {
+								await api.bulkShare([...selected], "private");
+								return `Made ${selected.size} private`;
+							})
+						}
 					>
 						<Icon name="lock" size={16} /> Make private
 					</button>
@@ -199,6 +250,7 @@ export function GalleryPage() {
 						<li key={a.id} className={`card${selected.has(a.id) ? " is-selected" : ""}`}>
 							<Link href={`/a/${a.id}`} className="card-link" aria-label={a.title} />
 							<Thumbnail artifact={a} />
+							<CardStatus artifact={a} />
 							<label className="card-check" title="Select">
 								<input
 									type="checkbox"
@@ -214,7 +266,6 @@ export function GalleryPage() {
 										<Icon name={kindIcon(a.kind)} size={13} />
 										{KIND_LABEL[a.kind]}
 									</span>
-									<VisibilityBadge artifact={a} />
 									<span className="muted">{timeAgo(a.updated_at)}</span>
 								</div>
 								{a.source || a.model ? (
@@ -248,6 +299,20 @@ export function GalleryPage() {
 			) : null}
 
 			<ConfirmDialog
+				open={confirmShare}
+				title={`Share ${selected.size} ${selected.size === 1 ? "artifact" : "artifacts"} by link?`}
+				body="Anyone with the link can open each one, no sign-in needed. Password-protected ones lose their password; expiry dates stay as they are."
+				confirmLabel="Share by link"
+				onClose={() => setConfirmShare(false)}
+				onConfirm={async () => {
+					setConfirmShare(false);
+					await bulk(async () => {
+						await api.bulkShare([...selected], "link");
+						return `Shared ${selected.size} by link`;
+					});
+				}}
+			/>
+			<ConfirmDialog
 				open={confirm}
 				title={`Delete ${selected.size} ${selected.size === 1 ? "artifact" : "artifacts"}?`}
 				body="Their files, versions and share links are removed permanently."
@@ -277,6 +342,19 @@ export function VisibilityBadge({ artifact }: { artifact: Pick<Artifact, "visibi
 	);
 }
 
+/** Who can open it, pinned to the thumbnail corner so every card states it, private included. */
+function CardStatus({ artifact: a }: { artifact: Artifact }) {
+	const state = a.expired ? "expired" : a.visibility;
+	const label = { private: "Private", link: "Shared", password: "Password", expired: "Expired" }[state];
+	const icon = a.visibility === "private" ? "lock" : a.visibility === "password" ? "key" : "globe";
+	return (
+		<span className={`card-status card-status-${state}`} title={label}>
+			<Icon name={icon} size={12} />
+			{state === "private" ? <span className="sr-only">{label}</span> : label}
+		</span>
+	);
+}
+
 function EmptyState({ filtered }: { filtered: boolean }) {
 	if (filtered) {
 		return (
@@ -293,10 +371,20 @@ function EmptyState({ filtered }: { filtered: boolean }) {
 		<div className="empty empty-onboard">
 			<Icon name="plug" size={28} />
 			<h2>Publish your first artifact</h2>
-			<p>
-				Connect an assistant like Claude Code, Codex, Cursor or Gemini CLI to this site's MCP server, then ask it to publish
-				something: a page, a report, a chart, an image.
-			</p>
+			<ol className="onboard-steps">
+				<li>
+					<strong>Create an access token</strong>
+					<span>One per assistant or machine, so you can revoke them separately.</span>
+				</li>
+				<li>
+					<strong>Paste the setup snippet</strong>
+					<span>Claude Code, Codex, Cursor, Gemini CLI, VS Code or any MCP client.</span>
+				</li>
+				<li>
+					<strong>Ask it to publish something</strong>
+					<span>“Publish this chart as an artifact and share it by link.”</span>
+				</li>
+			</ol>
 			<Link href="/settings" className="btn btn-primary">
 				Connect an assistant
 			</Link>

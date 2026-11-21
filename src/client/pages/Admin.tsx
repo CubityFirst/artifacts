@@ -28,11 +28,30 @@ export function AdminPage() {
 				<div>
 					<h1>Admin</h1>
 					<p className="muted">
-						{users ? `${users.length} users · ${totalArtifacts} artifacts · ${formatBytes(totalBytes)}` : "Loading…"}
+						{users
+							? `${users.length} users · ${totalArtifacts} artifacts · ${formatBytes(totalBytes)}`
+							: error
+								? " "
+								: "Loading…"}
 					</p>
 				</div>
 			</header>
-			{error ? <p className="note note-warn">{error}</p> : null}
+			{error ? (
+				<div className="empty" role="alert">
+					<h2>Couldn't load users</h2>
+					<p>{error === "Forbidden" ? "Your account doesn't have the admin role any more. Sign in again to refresh it." : error}</p>
+					<button
+						type="button"
+						className="btn"
+						onClick={() => {
+							setError(null);
+							void load();
+						}}
+					>
+						Try again
+					</button>
+				</div>
+			) : null}
 			{users ? (
 				<div className="table-wrap">
 					<table className="table">
@@ -53,8 +72,8 @@ export function AdminPage() {
 										<div className="user-cell">
 											<Avatar name={u.name || u.email || u.sub} src={u.picture} size={28} />
 											<div>
-												<strong>{u.name || "—"}</strong>
-												<span className="muted">{u.email}</span>
+												<strong>{u.name || u.email || u.sub}</strong>
+												{u.name && u.email ? <span className="muted">{u.email}</span> : null}
 											</div>
 										</div>
 									</td>
@@ -65,9 +84,15 @@ export function AdminPage() {
 											</span>
 										))}
 									</td>
-									<td className="num">{u.artifact_count}</td>
-									<td className="num">{formatBytes(u.bytes)}</td>
-									<td className="muted">{timeAgo(u.last_login_at)}</td>
+									<td className="num" data-label="Artifacts">
+										{u.artifact_count}
+									</td>
+									<td className="num" data-label="Storage">
+										{formatBytes(u.bytes)}
+									</td>
+									<td className="muted" data-label="Last sign-in">
+										{timeAgo(u.last_login_at)}
+									</td>
 									<td className="actions">
 										{u.id !== me.user.id ? (
 											<button type="button" className="btn btn-sm btn-danger-ghost" onClick={() => setRemove(u)}>

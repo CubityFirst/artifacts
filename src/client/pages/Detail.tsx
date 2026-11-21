@@ -44,19 +44,62 @@ export function DetailPage({ id }: { id: string }) {
 	if (error) {
 		return (
 			<div className="page">
-				<div className="empty">
-					<h2>{error}</h2>
-					<Link href="/" className="btn">
-						Back to artifacts
-					</Link>
+				<div className="empty" role="alert">
+					<Icon name="file" size={28} />
+					<h2>{error === "Artifact not found" ? "This artifact isn't here" : "Couldn't open this artifact"}</h2>
+					<p>
+						{error === "Artifact not found"
+							? "It may have been deleted, or the link belongs to a different account."
+							: error}
+					</p>
+					<div className="row">
+						<Link href="/" className="btn btn-primary">
+							Back to artifacts
+						</Link>
+						{error === "Artifact not found" ? null : (
+							<button type="button" className="btn" onClick={() => void reload()}>
+								Try again
+							</button>
+						)}
+					</div>
 				</div>
 			</div>
 		);
 	}
-	if (!art) return <div className="page detail-loading" aria-busy="true" />;
+	if (!art)
+		return (
+			<div className="detail" aria-busy="true" aria-label="Loading artifact">
+				<header className="detail-head">
+					<span className="icon-btn" />
+					<div className="detail-title">
+						<div className="sk sk-title" style={{ width: 260, height: 18 }} />
+						<div className="sk sk-meta" style={{ width: 180 }} />
+					</div>
+				</header>
+				<div className="detail-body">
+					<section className="preview">
+						<div className="preview-bar">
+							<div className="sk" style={{ width: 96, height: 28 }} />
+						</div>
+						<div className="frame-wrap">
+							<div className="sk sk-frame" />
+						</div>
+					</section>
+					<aside className="panel">
+						<div className="panel-body stack" style={{ alignContent: "start" }}>
+							<div className="sk" style={{ height: 40 }} />
+							<div className="sk" style={{ height: 56 }} />
+							<div className="sk" style={{ height: 56 }} />
+							<div className="sk" style={{ height: 56 }} />
+						</div>
+					</aside>
+				</div>
+			</div>
+		);
 
 	const viewingOld = art.viewing_version !== art.version;
 	const openUrl = art.url && !viewingOld ? art.url : art.preview_url;
+	const viewedAt = art.versions.find((v) => v.version === art.viewing_version)?.created_at;
 
 	return (
 		<div className="detail">
@@ -90,17 +133,25 @@ export function DetailPage({ id }: { id: string }) {
 					{viewingOld ? (
 						<div className="banner">
 							<Icon name="history" size={16} />
-							<span>
-								Viewing version {art.viewing_version} of {art.version}
+							<span className="banner-text">
+								<strong>
+									Viewing v{art.viewing_version} of {art.version}
+									{viewedAt ? `, from ${timeAgo(viewedAt)}` : ""}
+								</strong>
+								<span>Restoring publishes it as v{art.version + 1}. Nothing is deleted.</span>
 							</span>
 							<span className="grow" />
 							<button
 								type="button"
 								className="btn btn-sm btn-primary"
 								onClick={async () => {
-									await api.restore(art.id, art.viewing_version);
-									toast(`Restored version ${art.viewing_version}`);
-									navigate(`/a/${art.id}`, { replace: true });
+									try {
+										await api.restore(art.id, art.viewing_version);
+										toast(`Restored as v${art.version + 1}`);
+										navigate(`/a/${art.id}`, { replace: true });
+									} catch (err) {
+										toast(err instanceof Error ? err.message : "Couldn't restore this version", "error");
+									}
 								}}
 							>
 								Restore this version
@@ -126,8 +177,15 @@ export function DetailPage({ id }: { id: string }) {
 							))}
 						</div>
 						<span className="preview-entry muted">{art.viewing_entry}</span>
-						<button type="button" className="icon-btn" aria-label="Reload preview" title="Reload" onClick={() => setFrameKey((k) => k + 1)}>
-							<Icon name="history" size={16} />
+						<button
+							type="button"
+							className="icon-btn"
+							aria-label="Reload preview"
+							title="Reload preview"
+							// Refetch first: the preview URL is a capability that expires after 2 hours.
+							onClick={() => void reload().then(() => setFrameKey((k) => k + 1))}
+						>
+							<Icon name="refresh" size={16} />
 						</button>
 						<button
 							type="button"
@@ -200,6 +258,7 @@ function TitleEditor({ art, onSaved }: { art: ArtifactDetail; onSaved: () => voi
 		if (!next || next === art.title) return setValue(art.title);
 		try {
 			await api.update(art.id, { title: next });
+			toast("Renamed");
 			onSaved();
 		} catch (err) {
 			toast(err instanceof Error ? err.message : "Couldn't rename", "error");
@@ -207,20 +266,23 @@ function TitleEditor({ art, onSaved }: { art: ArtifactDetail; onSaved: () => voi
 		}
 	};
 	return (
-		<input
-			className="title-input"
-			value={value}
-			aria-label="Title"
-			onChange={(e) => setValue(e.target.value)}
-			onBlur={save}
-			onKeyDown={(e) => {
-				if (e.key === "Enter") e.currentTarget.blur();
-				if (e.key === "Escape") {
-					setValue(art.title);
-					requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
-				}
-			}}
-		/>
+		<label className="title-edit" title="Rename">
+			<input
+				className="title-input"
+				value={value}
+				aria-label="Title"
+				onChange={(e) => setValue(e.target.value)}
+				onBlur={save}
+				onKeyDown={(e) => {
+					if (e.key === "Enter") e.currentTarget.blur();
+					if (e.key === "Escape") {
+						setValue(art.title);
+						requestAnimationFrame(() => (e.target as HTMLInputElement).blur());
+					}
+				}}
+			/>
+			<Icon name="pencil" size={14} className="title-edit-icon" />
+		</label>
 	);
 }
 
@@ -228,6 +290,13 @@ const VIS_OPTIONS: { value: Visibility; title: string; body: string; icon: strin
 	{ value: "private", title: "Private", body: "Only you, from this dashboard.", icon: "lock" },
 	{ value: "link", title: "Anyone with the link", body: "No sign-in needed to view.", icon: "globe" },
 	{ value: "password", title: "Link + password", body: "Visitors enter a password first.", icon: "key" },
+];
+
+const EXPIRY_PRESETS: [string, number][] = [
+	["Never", 0],
+	["1 day", 1],
+	["7 days", 7],
+	["30 days", 30],
 ];
 
 function toLocalInput(ms: number) {
@@ -240,15 +309,17 @@ function SharePanel({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void
 	const toast = useToast();
 	const [visibility, setVisibility] = useState<Visibility>(art.visibility);
 	const [password, setPassword] = useState("");
-	const [expires, setExpires] = useState(art.expires_at ? toLocalInput(art.expires_at) : "");
+	const [showPassword, setShowPassword] = useState(false);
+	// A past expiry isn't a useful starting value (and the server rejects it): start from "Never".
+	const [expires, setExpires] = useState(art.expires_at && !art.expired ? toLocalInput(art.expires_at) : "");
 	const [busy, setBusy] = useState(false);
 	const [confirmRegen, setConfirmRegen] = useState(false);
 
 	useEffect(() => {
 		setVisibility(art.visibility);
-		setExpires(art.expires_at ? toLocalInput(art.expires_at) : "");
+		setExpires(art.expires_at && !art.expired ? toLocalInput(art.expires_at) : "");
 		setPassword("");
-	}, [art.visibility, art.expires_at]);
+	}, [art.visibility, art.expires_at, art.expired]);
 
 	const expiresMs = expires ? new Date(expires).getTime() : null;
 	const dirty =
@@ -283,8 +354,18 @@ function SharePanel({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void
 					</span>
 					<CopyButton value={art.url} label="Copy link" className="btn btn-sm btn-primary" />
 				</div>
+			) : (
+				<div className="share-link share-link-off">
+					<Icon name="lock" size={16} />
+					<span>No public link. Choose who can open it below to get one.</span>
+				</div>
+			)}
+			{art.expired && art.expires_at ? (
+				<p className="note note-warn" role="status">
+					<strong>This link expired {timeAgo(art.expires_at)}.</strong> Visitors see a “Link expired” page. Save to reopen it
+					with no expiry, or pick a new date below.
+				</p>
 			) : null}
-			{art.expired ? <p className="note note-warn">This link has expired. Pick a new expiry or clear it.</p> : null}
 
 			<fieldset className="radio-cards">
 				<legend>Who can open it</legend>
@@ -307,40 +388,83 @@ function SharePanel({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void
 			</fieldset>
 
 			{visibility === "password" ? (
-				<label className="field">
-					<span>{art.has_password ? "New password (leave blank to keep the current one)" : "Password"}</span>
-					<input
-						type="password"
-						className="input"
-						value={password}
-						autoComplete="new-password"
-						onChange={(e) => setPassword(e.target.value)}
-					/>
-				</label>
+				<div className="field">
+					<label htmlFor="share-password">{art.has_password ? "New password" : "Password"}</label>
+					<div className="input-affix">
+						<input
+							id="share-password"
+							type={showPassword ? "text" : "password"}
+							className="input"
+							value={password}
+							autoComplete="new-password"
+							aria-describedby="share-password-hint"
+							placeholder={art.has_password ? "Unchanged" : undefined}
+							onChange={(e) => setPassword(e.target.value)}
+						/>
+						<button
+							type="button"
+							className="icon-btn"
+							aria-label={showPassword ? "Hide password" : "Show password"}
+							aria-pressed={showPassword}
+							onClick={() => setShowPassword((s) => !s)}
+						>
+							<Icon name={showPassword ? "eyeOff" : "eye"} size={16} />
+						</button>
+					</div>
+					<p className="hint" id="share-password-hint">
+						{art.has_password ? "Leave blank to keep the current password. " : ""}
+						Visitors enter it once; the page then stays open for them for 12 hours.
+					</p>
+				</div>
 			) : null}
 
 			{visibility !== "private" ? (
-				<label className="field">
-					<span>Link expires</span>
-					<div className="row">
-						<input
-							type="datetime-local"
-							className="input"
-							value={expires}
-							min={toLocalInput(Date.now() + 60_000)}
-							onChange={(e) => setExpires(e.target.value)}
-						/>
-						{expires ? (
-							<button type="button" className="btn btn-sm" onClick={() => setExpires("")}>
-								Never
+				<div className="field">
+					<span id="expiry-label">Link expires</span>
+					<div className="chips expiry-presets" role="group" aria-labelledby="expiry-label">
+						{EXPIRY_PRESETS.map(([label, days]) => (
+							<button
+								key={label}
+								type="button"
+								className="chip"
+								aria-pressed={days === 0 ? !expires : undefined}
+								onClick={() => setExpires(days ? toLocalInput(Date.now() + days * 86_400_000) : "")}
+							>
+								{label}
 							</button>
-						) : null}
+						))}
 					</div>
-				</label>
+					<input
+						type="datetime-local"
+						className="input"
+						aria-labelledby="expiry-label"
+						value={expires}
+						min={toLocalInput(Date.now() + 60_000)}
+						onChange={(e) => setExpires(e.target.value)}
+					/>
+					<p className="hint">
+						{expiresMs ? `Stops working ${formatDate(expiresMs)} (${timeAgo(expiresMs)}).` : "Works until you change it."}
+					</p>
+				</div>
 			) : null}
 
-			<button type="button" className="btn btn-primary" disabled={!dirty || needsPassword || busy} onClick={save}>
-				{busy ? "Saving…" : "Save sharing"}
+			<button
+				type="button"
+				className={dirty ? "btn btn-primary" : "btn btn-quiet"}
+				disabled={!dirty || needsPassword || busy}
+				onClick={save}
+			>
+				{busy ? (
+					"Saving…"
+				) : !dirty ? (
+					<>
+						<Icon name="check" size={16} /> Sharing is up to date
+					</>
+				) : needsPassword ? (
+					"Enter a password to save"
+				) : (
+					"Save sharing"
+				)}
 			</button>
 
 			{art.visibility !== "private" ? (
@@ -357,9 +481,15 @@ function SharePanel({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void
 
 			<ConfirmDialog
 				open={confirmRegen}
-				title="Regenerate share link?"
-				body="The current link stops working immediately."
-				confirmLabel="Regenerate"
+				title="Regenerate the share link?"
+				body={
+					<>
+						<code className="strike">{art.url?.replace(/^https?:\/\//, "")}</code> stops working immediately, including for
+						visitors who already entered the password. Send the new link to anyone who should keep access.
+					</>
+				}
+				confirmLabel="Regenerate link"
+				destructive
 				onClose={() => setConfirmRegen(false)}
 				onConfirm={async () => {
 					await api.share(art.id, { regenerate_link: true });
@@ -374,6 +504,7 @@ function SharePanel({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void
 
 function DetailsPanel({ art, onSaved, onDelete }: { art: ArtifactDetail; onSaved: () => void; onDelete: () => void }) {
 	const [description, setDescription] = useState(art.description);
+	const [saved, setSaved] = useState(false);
 	const toast = useToast();
 	useEffect(() => setDescription(art.description), [art.description]);
 	const rows: [string, React.ReactNode][] = [
@@ -389,7 +520,18 @@ function DetailsPanel({ art, onSaved, onDelete }: { art: ArtifactDetail; onSaved
 	return (
 		<div className="stack">
 			<label className="field">
-				<span>Description</span>
+				<span className="field-label-row">
+					Description
+					<span className="saved" role="status">
+						{saved ? (
+							<>
+								<Icon name="check" size={13} /> Saved
+							</>
+						) : (
+							"Saves when you click away"
+						)}
+					</span>
+				</span>
 				<textarea
 					className="input"
 					rows={3}
@@ -400,6 +542,8 @@ function DetailsPanel({ art, onSaved, onDelete }: { art: ArtifactDetail; onSaved
 						if (description === art.description) return;
 						try {
 							await api.update(art.id, { description });
+							setSaved(true);
+							setTimeout(() => setSaved(false), 2400);
 							onSaved();
 						} catch (err) {
 							toast(err instanceof Error ? err.message : "Couldn't save", "error");
@@ -436,10 +580,10 @@ function VersionsPanel({ art }: { art: ArtifactDetail }) {
 							<span className="version-n">v{v.version}</span>
 							<span className="version-text">
 								<strong>{v.message || "Updated"}</strong>
-								<span className="muted">
-									{timeAgo(v.created_at)}
-									{v.source ? ` · ${sourceLabel(v.source)}` : ""}
-									{v.model ? ` · ${v.model}` : ""}
+								<span className="muted version-meta">
+									<span title={formatDate(v.created_at)}>{timeAgo(v.created_at)}</span>
+									{v.source ? <span>{sourceLabel(v.source)}</span> : null}
+									{v.model ? <span>{v.model}</span> : null}
 								</span>
 							</span>
 							{current ? <span className="pill">Current</span> : null}
@@ -451,6 +595,19 @@ function VersionsPanel({ art }: { art: ArtifactDetail }) {
 	);
 }
 
+const EXT_ICON: [RegExp, string][] = [
+	[/\.html?$/, "html"],
+	[/\.(md|markdown)$/, "markdown"],
+	[/\.(png|jpe?g|gif|webp|avif|svg|ico)$/, "image"],
+	[/\.(mp4|webm|mov|m4v)$/, "video"],
+	[/\.(mp3|wav|ogg|m4a|flac)$/, "audio"],
+	[/\.pdf$/, "pdf"],
+	[/\.(csv|tsv|json|ya?ml|xml|toml)$/, "data"],
+	[/\.(js|mjs|ts|tsx|jsx|css|py|rb|go|rs|sh|java|c|cpp|h)$/, "code"],
+	[/\.txt$/, "text"],
+];
+const fileIcon = (path: string) => EXT_ICON.find(([re]) => re.test(path.toLowerCase()))?.[1] ?? "file";
+
 function FilesPanel({ art }: { art: ArtifactDetail }) {
 	const base = art.preview_url;
 	return (
@@ -459,7 +616,7 @@ function FilesPanel({ art }: { art: ArtifactDetail }) {
 				const href = `${base}${f.path.split("/").map(encodeURIComponent).join("/")}`;
 				return (
 					<li key={f.path}>
-						<Icon name="file" size={16} />
+						<Icon name={fileIcon(f.path)} size={16} />
 						<a href={href} target="_blank" rel="noreferrer" className="file-path" title={f.path}>
 							{f.path}
 							{f.path === art.viewing_entry ? <span className="pill">entry</span> : null}
