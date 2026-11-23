@@ -200,7 +200,12 @@ footer{font-size:12.5px;color:var(--muted);padding-top:24px}`;
 
 const LOCK_SVG = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`;
 
-export function renderPasswordGate(title: string, action: string, error?: string): Response {
+export function renderPasswordGate(
+	title: string,
+	action: string,
+	error?: string,
+	opts: { status?: number; headers?: Record<string, string> } = {},
+): Response {
 	const css = `body{min-height:100vh;display:grid;place-items:center;padding:24px}
 form{width:min(380px,100%);display:grid;gap:14px;padding:32px 28px 28px;border:1px solid var(--line);border-radius:18px;background:var(--card);box-shadow:0 1px 2px rgb(0 0 0/.05),0 12px 40px rgb(0 0 0/.08)}
 .lock{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}
@@ -221,7 +226,12 @@ button{font:inherit;font-weight:600;padding:11px 12px;border-radius:10px;border:
 ${error ? `<p class="err" id="err" role="alert">${escapeHtml(error)}</p>` : ""}
 <button type="submit">Open</button></form>`;
 	return new Response(page(title, css, body), {
-		status: error ? 401 : 200,
-		headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-robots-tag": "noindex" },
+		status: opts.status ?? (error ? 401 : 200),
+		headers: {
+			"content-type": "text/html; charset=utf-8",
+			"cache-control": "no-store",
+			"x-robots-tag": "noindex",
+			...opts.headers,
+		},
 	});
 }

@@ -5,6 +5,7 @@ import { type AppEnv, authRoutes, sessionMiddleware } from "./auth.ts";
 import { handleContent } from "./content.ts";
 import { ensureSchema, getMeta, setMeta } from "./db.ts";
 import { handleMcp } from "./mcp.ts";
+import { prunePasswordAttempts } from "./throttle.ts";
 import { upload } from "./upload.ts";
 
 const app = new Hono<AppEnv>();
@@ -40,6 +41,7 @@ export default {
 		await env.DB.batch([
 			env.DB.prepare(`DELETE FROM sessions WHERE expires_at < ?`).bind(now),
 			env.DB.prepare(`DELETE FROM auth_flows WHERE created_at < ?`).bind(now - 60 * 60 * 1000),
+			...prunePasswordAttempts(env.DB, now),
 		]);
 		ctx.waitUntil(syncDeletedUsers(env));
 	},

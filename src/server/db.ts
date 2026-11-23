@@ -91,6 +91,27 @@ const MIGRATIONS: string[][] = [
 			value TEXT NOT NULL
 		)`,
 	],
+	// Password attempt limiting on shared links (throttle.ts). `client` is a truncated HMAC of the visitor's
+	// IP, or "*" for the artifact-wide window. The hourly cron prunes both tables.
+	[
+		`CREATE TABLE IF NOT EXISTS password_throttle (
+			artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+			client TEXT NOT NULL,
+			failures INTEGER NOT NULL,
+			locked_until INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			nonce TEXT NOT NULL,
+			PRIMARY KEY (artifact_id, client)
+		)`,
+		`CREATE INDEX IF NOT EXISTS password_throttle_updated ON password_throttle(updated_at)`,
+		`CREATE TABLE IF NOT EXISTS password_failures (
+			artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+			hour INTEGER NOT NULL,
+			n INTEGER NOT NULL,
+			PRIMARY KEY (artifact_id, hour)
+		)`,
+		`CREATE INDEX IF NOT EXISTS password_failures_hour ON password_failures(hour)`,
+	],
 ];
 
 let ready: Promise<void> | undefined;
