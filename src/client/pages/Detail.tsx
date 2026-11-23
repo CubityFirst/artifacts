@@ -51,9 +51,11 @@ export function DetailPage({ id }: { id: string }) {
 		try {
 			const next = await api.restore(id, version);
 			toast(`Restored v${version} as v${next.version}`);
-			// Leaving ?v= refetches through the effect above; on the latest view, refetch here.
-			if (versionParam) navigate(`/a/${id}`, { replace: true });
-			else await reload();
+			// Read the live URL, not this render's: the user may have moved on while the restore was in flight.
+			if (location.pathname !== `/a/${id}`) return;
+			if (location.search) navigate(`/a/${id}`, { replace: true });
+			// Fetch the latest here, not via `reload` (its ?v= may be stale), and stay busy until it lands.
+			setArt(await api.get(id));
 		} catch (err) {
 			toast(err instanceof Error ? err.message : "Couldn't restore this version", "error");
 		} finally {

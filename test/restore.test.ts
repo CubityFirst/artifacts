@@ -81,9 +81,8 @@ describe("restoreVersion", () => {
 		expect(versions[0]).toMatchObject({ entry: "a.html", message: "Restored version 1", source: "dashboard" });
 	});
 
-	it("rejects the current version and unknown versions", async () => {
+	it("rejects unknown versions and other users", async () => {
 		const art = await twoEntries();
-		await expect(restoreVersion(env, USER, art.id, 2)).rejects.toMatchObject({ status: 409 });
 		await expect(restoreVersion(env, USER, art.id, 7)).rejects.toMatchObject({ status: 404 });
 		await expect(restoreVersion(env, "someone-else", art.id, 1)).rejects.toBeInstanceOf(ArtifactError);
 		expect((await listVersions(env, art.id)).length).toBe(2);
@@ -126,11 +125,13 @@ describe("MCP update_artifact restore_version", () => {
 		expect((await listVersions(env, art.id))[0]).toMatchObject({ version: 3, message: "Back to a" });
 	});
 
-	it("refuses to mix a restore with file changes", async () => {
+	it("refuses to mix a restore with other changes", async () => {
 		const art = await twoEntries();
-		const res = await call({ id: art.id, restore_version: 1, files: [{ path: "c.html", content: "x" }] });
-		expect(res.isError).toBe(true);
-		expect(res.text).toContain("can't be combined");
+		for (const extra of [{ files: [{ path: "c.html", content: "x" }] }, { title: "Renamed" }]) {
+			const res = await call({ id: art.id, restore_version: 1, ...extra });
+			expect(res.isError).toBe(true);
+			expect(res.text).toContain("only be combined with message and model");
+		}
 		expect((await listVersions(env, art.id)).length).toBe(2);
 	});
 });

@@ -179,7 +179,7 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 					.int()
 					.min(1)
 					.optional()
-					.describe("Roll back: new version copying this version's files and entry. Not combinable with file or entry changes."),
+					.describe("Roll back: new version copying this version's files and entry. Only message and model may accompany it."),
 				title: z.string().optional(),
 				description: z.string().optional(),
 				entry: z.string().optional().describe("File that opens first; must exist."),
@@ -192,11 +192,11 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 			if (restore_version === undefined) {
 				return serializeArtifact(env, await updateArtifact(env, user.id, id, { ...args, source }));
 			}
-			const { files, delete_paths, replace_all, entry, ...meta } = args;
-			if (files?.length || delete_paths?.length || replace_all || entry !== undefined) {
-				throw new ArtifactError("restore_version can't be combined with files, delete_paths, replace_all or entry");
+			const { message, model, ...other } = args;
+			if (Object.values(other).some((v) => v !== undefined)) {
+				throw new ArtifactError("restore_version can only be combined with message and model");
 			}
-			return serializeArtifact(env, await restoreVersion(env, user.id, id, restore_version, { ...meta, source }));
+			return serializeArtifact(env, await restoreVersion(env, user.id, id, restore_version, { message, model, source }));
 		}),
 	);
 

@@ -471,17 +471,16 @@ export async function restoreVersion(
 	userId: string,
 	id: string,
 	version: number,
-	meta: { title?: string; description?: string; message?: string; source?: string; model?: string } = {},
+	meta: { message?: string; source?: string; model?: string } = {},
 ): Promise<ArtifactRow> {
 	const art = await getOwnedArtifact(env, userId, id);
 	const v = await env.DB.prepare(`SELECT * FROM artifact_versions WHERE artifact_id = ? AND version = ?`)
 		.bind(id, version)
 		.first<VersionRow>();
 	if (!v) throw new ArtifactError(`Version ${version} not found`, 404);
-	if (v.version === art.current_version) throw new ArtifactError(`Version ${version} is already the current version`, 409);
 	const files = await listFiles(env, id, version);
 	return commitVersion(env, art, files, {
-		...meta,
+		model: meta.model,
 		entry: v.entry,
 		message: meta.message || `Restored version ${version}`,
 		source: meta.source ?? "dashboard",
