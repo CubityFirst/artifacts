@@ -8,9 +8,9 @@ import {
 	ARTIFACT_WINDOW_MS,
 	BASE_LOCK_MS,
 	beginAttempt,
+	clientKey,
 	clientPrefix,
 	FREE_ATTEMPTS,
-	lockoutMs,
 	MAX_LOCK_MS,
 	prunePasswordAttempts,
 	recentFailures,
@@ -44,7 +44,6 @@ beforeEach(async () => {
 
 afterEach(() => {
 	vi.restoreAllMocks();
-	vi.useRealTimers();
 });
 
 /** A wrong guess through the throttle, as content.ts does it (minus the hash). */
@@ -53,16 +52,6 @@ async function fail(ip: string, now: number) {
 	if (a.allowed) await recordFailure(env, a, now);
 	return a;
 }
-
-describe("lockoutMs", () => {
-	it("gives FREE_ATTEMPTS free failures, then doubles up to the cap", () => {
-		for (let n = 0; n < FREE_ATTEMPTS; n++) expect(lockoutMs(n)).toBe(0);
-		expect(lockoutMs(FREE_ATTEMPTS)).toBe(BASE_LOCK_MS);
-		expect(lockoutMs(FREE_ATTEMPTS + 1)).toBe(BASE_LOCK_MS * 2);
-		expect(lockoutMs(FREE_ATTEMPTS + 2)).toBe(BASE_LOCK_MS * 4);
-		expect(lockoutMs(FREE_ATTEMPTS + 50)).toBe(MAX_LOCK_MS);
-	});
-});
 
 describe("clientPrefix", () => {
 	it("keeps IPv4 whole and truncates IPv6 to its /64", () => {
@@ -156,6 +145,23 @@ describe("beginAttempt", () => {
 
 		// After the window, the address that already guessed can try again.
 		expect((await beginAttempt(env, ART, "192.0.2.0", now + ARTIFACT_WINDOW_MS)).allowed).toBe(true);
+	});
+
+	it("over the ceiling, parallel requests from one address all wait for the window and leave its record alone", async () => {
+		const now = 1_000_000_000_000;
+		for (let i = 0; i < ARTIFACT_CEILING; i++) await fail(`192.0.2.${Math.floor(i / 3)}`, now);
+		// An address whose lockout just ended and whose next attempt would earn the full hour's lockout.
+		const client = await clientKey(env.SESSION_SECRET, ART, IP);
+		await env.DB.prepare(
+			`INSERT INTO password_throttle (artifact_id, client, failures, locked_until, updated_at, nonce) VALUES (?, ?, 12, 0, ?, 'x')`,
+		)
+			.bind(ART, client, now)
+			.run();
+
+		const results = await Promise.all(Array.from({ length: 8 }, () => beginAttempt(env, ART, IP, now + 60_000)));
+		expect(results).toEqual(Array(8).fill({ allowed: false, retryAfterMs: ARTIFACT_WINDOW_MS - 60_000 }));
+		const after = await env.DB.prepare(`SELECT failures, locked_until FROM password_throttle WHERE client = ?`).bind(client).first();
+		expect(after).toEqual({ failures: 12, locked_until: 0 });
 	});
 });
 
