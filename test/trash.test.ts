@@ -256,7 +256,7 @@ describe("dashboard and MCP deletes move to trash", () => {
 		const art = await publish(user.id);
 		const del = await mcp(token, "delete_artifact", { id: art.id });
 		expect(del.isError).toBe(false);
-		expect(JSON.parse(del.text)).toMatchObject({ trashed: art.id });
+		expect(JSON.parse(del.text)).toMatchObject({ deleted: art.id, purge_at: expect.any(String) });
 		expect((await row(art.id))!.deleted_at).toBeTypeOf("number");
 
 		expect((await mcp(token, "get_artifact", { id: art.id })).isError).toBe(true);

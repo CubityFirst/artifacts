@@ -120,7 +120,8 @@ export function TrashPage() {
 									</td>
 									<td className="muted" data-label="Deleted for good">
 										<time dateTime={new Date(a.purge_at).toISOString()} title={formatDate(a.purge_at)}>
-											{timeAgo(a.purge_at)}
+											{/* The hourly purge can lag the 30-day mark by up to an hour. */}
+											{a.purge_at <= Date.now() ? "Within the hour" : timeAgo(a.purge_at)}
 										</time>
 									</td>
 									<td className="actions">
@@ -182,13 +183,16 @@ export function TrashPage() {
 				onConfirm={async () => {
 					try {
 						let deleted = 0;
-						// The server empties in batches; keep going until nothing is left.
+						let remaining = 0;
+						// The server empties in batches; keep going until nothing is left or a batch makes no progress.
 						for (;;) {
 							const res = await api.emptyTrash();
 							deleted += res.deleted;
-							if (res.remaining === 0 || res.deleted === 0) break;
+							remaining = res.remaining;
+							if (remaining === 0 || res.deleted === 0) break;
 						}
-						toast(`Deleted ${deleted} forever`);
+						if (remaining) toast(`Deleted ${deleted} forever; ${remaining} couldn't be deleted. Try again.`, "error");
+						else toast(`Deleted ${deleted} forever`);
 					} catch (err) {
 						toast(err instanceof Error ? err.message : "Couldn't empty trash", "error");
 					}

@@ -1872,9 +1872,13 @@ textarea.input {
 	.sidebar-head {
 		flex: none;
 	}
+	.sidebar {
+		min-width: 0;
+	}
 	.sidebar nav {
 		display: flex;
 		flex: 1;
+		min-width: 0;
 		overflow-x: auto;
 		scrollbar-width: none;
 	}
@@ -2018,5 +2022,18 @@ textarea.input {
 	}
 	.user-cell .muted {
 		overflow-wrap: anywhere;
+	}
+	.cell-sub {
+		white-space: normal;
+	}
+	/* Trash rows: name on top, the two dates side by side, then the buttons. */
+	.trash-table tr {
+		grid-template-columns: repeat(2, 1fr);
+	}
+	.trash-table td:nth-child(2) {
+		grid-column: auto;
+	}
+	.trash-actions {
+		justify-content: flex-start;
 	}
 }

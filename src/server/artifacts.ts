@@ -424,7 +424,7 @@ async function commitVersion(
 				env.DB.prepare(
 			`UPDATE artifacts SET current_version = ?, entry = ?, kind = ?, size_bytes = ?, file_count = ?, title = ?,
 			   description = ?, source = ?, model = ?, updated_at = ?
-			 WHERE id = ? AND current_version = ? AND deleted_at IS NULL`,
+			 WHERE id = ? AND current_version = ?`,
 		).bind(version, entry.path, kind, size, files.length, title, description, source, model, now, art.id, art.current_version),
 			],
 		},
@@ -600,11 +600,11 @@ export async function listTrash(env: Env, userId: string, query: { limit?: numbe
 		)
 			.bind(userId, limit, offset)
 			.all<ArtifactRow>(),
-		env.DB.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(size_bytes), 0) AS bytes FROM artifacts WHERE user_id = ? AND deleted_at IS NOT NULL`)
+		env.DB.prepare(`SELECT COUNT(*) AS n FROM artifacts WHERE user_id = ? AND deleted_at IS NOT NULL`)
 			.bind(userId)
-			.first<{ n: number; bytes: number }>(),
+			.first<{ n: number }>(),
 	]);
-	return { items: rows.results, total: total?.n ?? 0, bytes: total?.bytes ?? 0, limit, offset };
+	return { items: rows.results, total: total?.n ?? 0, limit, offset };
 }
 
 /**

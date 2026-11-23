@@ -332,7 +332,7 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		},
 		wrap(async ({ id }) => {
 			const art = await trashArtifact(env, user.id, id);
-			return { trashed: art.id, title: art.title, purge_at: new Date(art.deleted_at! + TRASH_TTL_MS).toISOString() };
+			return { deleted: art.id, title: art.title, purge_at: new Date(art.deleted_at! + TRASH_TTL_MS).toISOString() };
 		}),
 	);
 

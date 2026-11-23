@@ -44,12 +44,13 @@ export default {
 			...prunePasswordAttempts(env.DB, now),
 		]);
 		ctx.waitUntil(syncDeletedUsers(env));
-		ctx.waitUntil(purgeExpiredTrash(env));
+		// Awaited, not waitUntil: a purge cut off between an artifact's D1 and R2 deletes would orphan its files.
+		await purgeExpiredTrash(env);
 	},
 } satisfies ExportedHandler<Env>;
 
 /** Hard-deletes artifacts that have been in trash for 30 days, a bounded number per run. */
-export async function purgeExpiredTrash(env: Env) {
+async function purgeExpiredTrash(env: Env) {
 	const { deleted, remaining } = await purgeTrash(env, { limit: 100 });
 	if (deleted || remaining) console.log(`Trash purge: deleted ${deleted}, ${remaining} left for the next run`);
 }

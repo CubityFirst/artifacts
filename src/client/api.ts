@@ -135,7 +135,7 @@ export const api = {
 	remove: (id: string) => request<{ deleted: string }>("DELETE", `/artifacts/${id}`),
 	bulkDelete: (ids: string[]) => request<{ deleted: string[] }>("POST", "/artifacts/bulk-delete", { ids }),
 	trash: (offset = 0) =>
-		request<{ items: TrashedArtifact[]; total: number; bytes: number; limit: number; offset: number }>(
+		request<{ items: TrashedArtifact[]; total: number; limit: number; offset: number }>(
 			"GET",
 			`/trash?offset=${offset}`,
 		),
