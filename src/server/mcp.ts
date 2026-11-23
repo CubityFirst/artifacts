@@ -192,8 +192,8 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 			if (restore_version === undefined) {
 				return serializeArtifact(env, await updateArtifact(env, user.id, id, { ...args, source }));
 			}
-			const { message, model, ...other } = args;
-			if (Object.values(other).some((v) => v !== undefined)) {
+			const { message, model, files, delete_paths, replace_all, entry, title, description } = args;
+			if (files?.length || delete_paths?.length || replace_all || entry !== undefined || title !== undefined || description !== undefined) {
 				throw new ArtifactError("restore_version can only be combined with message and model");
 			}
 			return serializeArtifact(env, await restoreVersion(env, user.id, id, restore_version, { message, model, source }));
