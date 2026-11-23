@@ -7,6 +7,7 @@ import {
 	kindFor,
 	normalizePath as normalizePathUnsafe,
 } from "./mime.ts";
+import { resetPasswordAttempts } from "./throttle.ts";
 
 export const LIMITS = {
 	maxFileBytes: 50 * 1024 * 1024,
@@ -519,12 +520,14 @@ export async function setSharing(env: Env, userId: string, id: string, input: Sh
 		}
 		expiresAt = input.expires_at;
 	}
-	await env.DB.prepare(
-		`UPDATE artifacts SET visibility = ?, password_hash = ?, expires_at = ?, slug = ?, share_epoch = share_epoch + ?, updated_at = ?
-		 WHERE id = ?`,
-	)
-		.bind(visibility, passwordHash, expiresAt, input.regenerate_link ? randomId(12) : art.slug, bumpEpoch ? 1 : 0, Date.now(), id)
-		.run();
+	await env.DB.batch([
+		env.DB.prepare(
+			`UPDATE artifacts SET visibility = ?, password_hash = ?, expires_at = ?, slug = ?, share_epoch = share_epoch + ?, updated_at = ?
+			 WHERE id = ?`,
+		).bind(visibility, passwordHash, expiresAt, input.regenerate_link ? randomId(12) : art.slug, bumpEpoch ? 1 : 0, Date.now(), id),
+		// A new (or removed) password starts the attempt counters and the owner's failure count from zero.
+		...(passwordHash !== art.password_hash ? resetPasswordAttempts(env.DB, id) : []),
+	]);
 	return getOwnedArtifact(env, userId, id);
 }
 

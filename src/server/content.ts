@@ -2,6 +2,7 @@ import { type ArtifactRow, type ContentToken, type FileRow, blobKey } from "./ar
 import { signToken, verifyPassword, verifyToken } from "./crypto.ts";
 import { isTextType, kindFor } from "./mime.ts";
 import { renderCode, renderMarkdown, renderMedia, renderMessage, renderPasswordGate } from "./render.ts";
+import { beginAttempt, recordFailure, recordSuccess } from "./throttle.ts";
 
 /**
  * The content origin. It never sets cookies: access is either a public slug URL
@@ -55,9 +56,26 @@ export async function handleContent(request: Request, env: Env): Promise<Respons
 		if (request.method === "POST") {
 			const form = await request.formData().catch(() => null);
 			const password = form?.get("password");
-			if (typeof password !== "string" || !art.password_hash || !(await verifyPassword(password, art.password_hash))) {
+			if (typeof password !== "string" || !art.password_hash) {
 				return renderPasswordGate(art.title, action, "That password isn't right.");
 			}
+			// Throttle before hashing: a blocked guess costs one D1 query, not a PBKDF2 run.
+			const attempt = await beginAttempt(env, art.id, request.headers.get("cf-connecting-ip") ?? "unknown");
+			if (!attempt.allowed) {
+				const seconds = Math.ceil(attempt.retryAfterMs / 1000);
+				const minutes = Math.ceil(seconds / 60);
+				return renderPasswordGate(
+					art.title,
+					action,
+					`Too many attempts. Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.`,
+					{ status: 429, headers: { "retry-after": String(seconds) } },
+				);
+			}
+			if (!(await verifyPassword(password, art.password_hash))) {
+				await recordFailure(env, attempt);
+				return renderPasswordGate(art.title, action, "That password isn't right.");
+			}
+			await recordSuccess(env, attempt);
 			const token = await signToken(env.SESSION_SECRET, {
 				a: art.id,
 				v: 0,

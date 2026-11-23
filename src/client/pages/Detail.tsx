@@ -542,6 +542,15 @@ function SharePanel({ art, onSaved }: { art: ArtifactDetail; onSaved: () => void
 						{art.has_password ? "Leave blank to keep the current password. " : ""}
 						Visitors enter it once; the page then stays open for them for 12 hours.
 					</p>
+					{art.visibility === "password" && art.failed_password_attempts_24h > 0 ? (
+						<p className="hint" role="status">
+							<strong>
+								{art.failed_password_attempts_24h} failed password attempt{art.failed_password_attempts_24h === 1 ? "" : "s"} in
+								the last 24 hours.
+							</strong>{" "}
+							Repeated guesses are slowed down. Changing the password resets this count.
+						</p>
+					) : null}
 				</div>
 			) : null}
 

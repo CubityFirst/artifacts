@@ -41,6 +41,8 @@ export interface ArtifactDetail extends Artifact {
 	preview_url: string;
 	files: { path: string; content_type: string; size: number }[];
 	versions: Version[];
+	/** Wrong passwords entered on the share link in the last 24 hours (0 unless password-protected). */
+	failed_password_attempts_24h: number;
 }
 
 export interface Me {
