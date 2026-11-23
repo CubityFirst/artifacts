@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { api } from "./api.ts";
-import { deleteUserData } from "./artifacts.ts";
+import { deleteUserData, purgeTrash } from "./artifacts.ts";
 import { type AppEnv, authRoutes, sessionMiddleware } from "./auth.ts";
 import { handleContent } from "./content.ts";
 import { ensureSchema, getMeta, setMeta } from "./db.ts";
@@ -44,8 +44,16 @@ export default {
 			...prunePasswordAttempts(env.DB, now),
 		]);
 		ctx.waitUntil(syncDeletedUsers(env));
+		// Awaited, not waitUntil: a purge cut off between an artifact's D1 and R2 deletes would orphan its files.
+		await purgeExpiredTrash(env);
 	},
 } satisfies ExportedHandler<Env>;
+
+/** Hard-deletes artifacts that have been in trash for 30 days, a bounded number per run. */
+async function purgeExpiredTrash(env: Env) {
+	const { deleted, remaining } = await purgeTrash(env, { limit: 100 });
+	if (deleted || remaining) console.log(`Trash purge: deleted ${deleted}, ${remaining} left for the next run`);
+}
 
 interface IdentityService {
 	listDeletedUsers(sinceMs: number): Promise<unknown>;

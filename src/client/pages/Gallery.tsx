@@ -227,7 +227,7 @@ export function GalleryPage() {
 						<Icon name="lock" size={16} /> Make private
 					</button>
 					<button type="button" className="btn btn-danger" onClick={() => setConfirm(true)}>
-						<Icon name="trash" size={16} /> Delete
+						<Icon name="trash" size={16} /> Move to trash
 					</button>
 					<button type="button" className="icon-btn" aria-label="Clear selection" onClick={() => setSelected(new Set())}>
 						<Icon name="close" />
@@ -315,14 +315,14 @@ export function GalleryPage() {
 			/>
 			<ConfirmDialog
 				open={confirm}
-				title={`Delete ${selected.size} ${selected.size === 1 ? "artifact" : "artifacts"}?`}
-				body="Their files, versions and share links are removed permanently."
-				confirmLabel="Delete"
+				title={`Move ${selected.size} ${selected.size === 1 ? "artifact" : "artifacts"} to trash?`}
+				body="Their links stop working right away. You can restore them from Trash for 30 days; they come back private."
+				confirmLabel="Move to trash"
 				destructive
 				onClose={() => setConfirm(false)}
 				onConfirm={async () => {
 					const res = await api.bulkDelete([...selected]);
-					toast(`Deleted ${res.deleted.length}`);
+					toast(`Moved ${res.deleted.length} to trash`);
 					setConfirm(false);
 					setSelected(new Set());
 					void load(0);

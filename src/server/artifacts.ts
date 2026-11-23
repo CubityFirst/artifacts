@@ -38,6 +38,8 @@ export interface ArtifactRow {
 	model: string;
 	created_at: number;
 	updated_at: number;
+	/** Set while the artifact is in trash; null otherwise. */
+	deleted_at: number | null;
 }
 
 export interface FileRow {
@@ -99,8 +101,9 @@ export function blobKey(artifactId: string, sha256: string) {
 // ---------------------------------------------------------------------------
 // Reading
 
+/** A live (not trashed) artifact of this user; trashed ones are "not found" to every read, edit and sharing path. */
 export async function getOwnedArtifact(env: Env, userId: string, id: string): Promise<ArtifactRow> {
-	const row = await env.DB.prepare(`SELECT * FROM artifacts WHERE id = ? AND user_id = ?`)
+	const row = await env.DB.prepare(`SELECT * FROM artifacts WHERE id = ? AND user_id = ? AND deleted_at IS NULL`)
 		.bind(id, userId)
 		.first<ArtifactRow>();
 	if (!row) throw new ArtifactError(`Artifact ${id} not found`, 404);
@@ -135,7 +138,7 @@ export interface ListQuery {
 }
 
 export async function listArtifacts(env: Env, userId: string, query: ListQuery) {
-	const where = ["user_id = ?"];
+	const where = ["user_id = ?", "deleted_at IS NULL"];
 	const params: unknown[] = [userId];
 	if (query.q?.trim()) {
 		where.push(`(title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' OR entry LIKE ? ESCAPE '\\')`);
@@ -370,7 +373,7 @@ export async function updateArtifact(env: Env, userId: string, id: string, input
 
 	if (!changesFiles && !changesEntry) {
 		// Metadata-only update: no new version.
-		await env.DB.prepare(`UPDATE artifacts SET title = ?, description = ?, updated_at = ? WHERE id = ?`)
+		await env.DB.prepare(`UPDATE artifacts SET title = ?, description = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`)
 			.bind(
 				input.title !== undefined ? cleanTitle(input.title, art.title) : art.title,
 				input.description !== undefined ? input.description.slice(0, LIMITS.maxDescription) : art.description,
@@ -523,7 +526,7 @@ export async function setSharing(env: Env, userId: string, id: string, input: Sh
 	await env.DB.batch([
 		env.DB.prepare(
 			`UPDATE artifacts SET visibility = ?, password_hash = ?, expires_at = ?, slug = ?, share_epoch = share_epoch + ?, updated_at = ?
-			 WHERE id = ?`,
+			 WHERE id = ? AND deleted_at IS NULL`,
 		).bind(visibility, passwordHash, expiresAt, input.regenerate_link ? randomId(12) : art.slug, bumpEpoch ? 1 : 0, Date.now(), id),
 		// A new (or removed) password starts the attempt counters and the owner's failure count from zero.
 		...(passwordHash !== art.password_hash ? resetPasswordAttempts(env.DB, id) : []),
@@ -531,9 +534,109 @@ export async function setSharing(env: Env, userId: string, id: string, input: Sh
 	return getOwnedArtifact(env, userId, id);
 }
 
-export async function deleteArtifact(env: Env, artifactId: string): Promise<void> {
-	await env.DB.prepare(`DELETE FROM artifacts WHERE id = ?`).bind(artifactId).run();
+/**
+ * Hard-deletes an artifact: D1 rows (versions and files cascade), then its R2 prefix.
+ * With `trashedBefore`, only deletes it if it is still in trash and was trashed before that time,
+ * so a restore that races the purge wins. Returns whether it deleted anything.
+ */
+export async function deleteArtifact(env: Env, artifactId: string, trashedBefore?: number): Promise<boolean> {
+	const res =
+		trashedBefore === undefined
+			? await env.DB.prepare(`DELETE FROM artifacts WHERE id = ?`).bind(artifactId).run()
+			: await env.DB.prepare(`DELETE FROM artifacts WHERE id = ? AND deleted_at IS NOT NULL AND deleted_at < ?`)
+					.bind(artifactId, trashedBefore)
+					.run();
+	if (trashedBefore !== undefined && !res.meta.changes) return false;
 	await deletePrefix(env, `a/${artifactId}/`);
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Trash
+
+export const TRASH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Moves an artifact to trash. It also becomes private and its share epoch is bumped, so every share link,
+ * password-unlocked link and preview URL stops working now and stays dead after a restore until the owner
+ * shares it again. Everything else (files, versions, title, slug, dates) is kept as it was.
+ */
+export async function trashArtifact(env: Env, userId: string, id: string): Promise<ArtifactRow> {
+	const art = await getOwnedArtifact(env, userId, id);
+	const now = Date.now();
+	await env.DB.prepare(
+		`UPDATE artifacts SET deleted_at = ?, visibility = 'private', password_hash = NULL, share_epoch = share_epoch + 1
+		 WHERE id = ? AND deleted_at IS NULL`,
+	)
+		.bind(now, art.id)
+		.run();
+	return { ...art, deleted_at: now, visibility: "private", password_hash: null, share_epoch: art.share_epoch + 1 };
+}
+
+export async function restoreFromTrash(env: Env, userId: string, id: string): Promise<ArtifactRow> {
+	const res = await env.DB.prepare(`UPDATE artifacts SET deleted_at = NULL WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL`)
+		.bind(id, userId)
+		.run();
+	if (!res.meta.changes) throw new ArtifactError(`Artifact ${id} is not in trash`, 404);
+	return getOwnedArtifact(env, userId, id);
+}
+
+/** "Delete forever" for one trashed artifact. */
+export async function deleteFromTrash(env: Env, userId: string, id: string): Promise<void> {
+	const row = await env.DB.prepare(`SELECT id FROM artifacts WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL`)
+		.bind(id, userId)
+		.first<{ id: string }>();
+	if (!row || !(await deleteArtifact(env, row.id, Number.MAX_SAFE_INTEGER))) {
+		throw new ArtifactError(`Artifact ${id} is not in trash`, 404);
+	}
+}
+
+export async function listTrash(env: Env, userId: string, query: { limit?: number; offset?: number } = {}) {
+	const limit = Math.min(Math.max(query.limit ?? 100, 1), 200);
+	const offset = Math.max(query.offset ?? 0, 0);
+	const [rows, total] = await Promise.all([
+		env.DB.prepare(
+			`SELECT * FROM artifacts WHERE user_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC, id LIMIT ? OFFSET ?`,
+		)
+			.bind(userId, limit, offset)
+			.all<ArtifactRow>(),
+		env.DB.prepare(`SELECT COUNT(*) AS n FROM artifacts WHERE user_id = ? AND deleted_at IS NOT NULL`)
+			.bind(userId)
+			.first<{ n: number }>(),
+	]);
+	return { items: rows.results, total: total?.n ?? 0, limit, offset };
+}
+
+/**
+ * Hard-deletes up to `limit` trashed artifacts: either the user's whole trash ("Empty trash"), or, without a user,
+ * everything trashed more than TRASH_TTL_MS ago (the hourly purge). Bounded so one invocation stays well inside
+ * the Worker's subrequest limits; callers repeat until `remaining` is 0.
+ */
+export async function purgeTrash(
+	env: Env,
+	opts: { userId?: string; now?: number; limit?: number } = {},
+): Promise<{ deleted: number; remaining: number }> {
+	const cutoff = opts.userId ? Number.MAX_SAFE_INTEGER : (opts.now ?? Date.now()) - TRASH_TTL_MS;
+	const limit = opts.limit ?? 50;
+	const scope = opts.userId ? `AND user_id = ?` : "";
+	const binds = opts.userId ? [cutoff, opts.userId] : [cutoff];
+	const { results } = await env.DB.prepare(
+		`SELECT id FROM artifacts WHERE deleted_at IS NOT NULL AND deleted_at < ? ${scope} ORDER BY deleted_at LIMIT ?`,
+	)
+		.bind(...binds, limit)
+		.all<{ id: string }>();
+	let deleted = 0;
+	for (const { id } of results) {
+		try {
+			if (await deleteArtifact(env, id, cutoff)) deleted++;
+		} catch (err) {
+			console.error(`Purging trashed artifact ${id} failed:`, err);
+		}
+	}
+	const left = await env.DB.prepare(`SELECT COUNT(*) AS n FROM artifacts WHERE deleted_at IS NOT NULL AND deleted_at < ? ${scope}`)
+		.bind(...binds)
+		.first<{ n: number }>();
+	return { deleted, remaining: left?.n ?? 0 };
 }
 
 export async function deletePrefix(env: Env, prefix: string) {
@@ -545,7 +648,7 @@ export async function deletePrefix(env: Env, prefix: string) {
 	} while (cursor);
 }
 
-/** Deletes a user and everything they own (D1 cascades; R2 needs explicit deletes). */
+/** Deletes a user and everything they own, trash included (D1 cascades; R2 needs explicit deletes). */
 export async function deleteUserData(env: Env, userId: string) {
 	const { results } = await env.DB.prepare(`SELECT id FROM artifacts WHERE user_id = ?`).bind(userId).all<{ id: string }>();
 	for (const { id } of results) await deletePrefix(env, `a/${id}/`);

@@ -112,6 +112,11 @@ const MIGRATIONS: string[][] = [
 		)`,
 		`CREATE INDEX IF NOT EXISTS password_failures_hour ON password_failures(hour)`,
 	],
+	// Trash: a non-null deleted_at hides the artifact everywhere except the Trash view until the cron purges it.
+	[
+		`ALTER TABLE artifacts ADD COLUMN deleted_at INTEGER`,
+		`CREATE INDEX IF NOT EXISTS artifacts_trash ON artifacts(deleted_at) WHERE deleted_at IS NOT NULL`,
+	],
 ];
 
 let ready: Promise<void> | undefined;

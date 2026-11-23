@@ -296,14 +296,14 @@ export function DetailPage({ id }: { id: string }) {
 
 			<ConfirmDialog
 				open={confirmDelete}
-				title={`Delete "${art.title}"?`}
-				body="All versions and files are removed and its links stop working. This can't be undone."
-				confirmLabel="Delete artifact"
+				title={`Move "${art.title}" to trash?`}
+				body="Its links stop working right away. You can restore it from Trash for 30 days; it comes back private."
+				confirmLabel="Move to trash"
 				destructive
 				onClose={() => setConfirmDelete(false)}
 				onConfirm={async () => {
 					await api.remove(art.id);
-					toast("Artifact deleted");
+					toast("Moved to trash");
 					navigate("/");
 				}}
 			/>
@@ -697,7 +697,7 @@ function DetailsPanel({ art, onSaved, onDelete }: { art: ArtifactDetail; onSaved
 			</dl>
 			<div className="subtle-section">
 				<button type="button" className="btn btn-danger-ghost" onClick={onDelete}>
-					<Icon name="trash" size={16} /> Delete artifact
+					<Icon name="trash" size={16} /> Move to trash
 				</button>
 			</div>
 		</div>
