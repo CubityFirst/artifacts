@@ -5,6 +5,7 @@ import { AdminPage } from "./pages/Admin.tsx";
 import { DetailPage } from "./pages/Detail.tsx";
 import { GalleryPage } from "./pages/Gallery.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
+import { TrashPage } from "./pages/Trash.tsx";
 import { Link, match, useLocation } from "./router.tsx";
 
 const MeContext = createContext<Me | null>(null);
@@ -100,15 +101,17 @@ function Shell() {
 	let params: Record<string, string> | null;
 	if ((params = match("/a/:id", pathname))) page = <DetailPage key={params.id} id={params.id} />;
 	else if (pathname === "/settings") page = <SettingsPage />;
+	else if (pathname === "/trash") page = <TrashPage />;
 	else if (pathname === "/admin" && me.user.is_admin) page = <AdminPage />;
 	else page = <GalleryPage />;
 
-	const onGallery = !pathname.startsWith("/a/") && pathname !== "/settings" && pathname !== "/admin";
+	const onGallery = !pathname.startsWith("/a/") && !["/settings", "/admin", "/trash"].includes(pathname);
 	const nav = [
 		{ href: "/", label: "All artifacts", icon: "grid", active: onGallery && !visibility },
 		{ href: "/?visibility=link", label: "Shared", icon: "globe", active: onGallery && visibility === "link" },
 		{ href: "/?visibility=password", label: "Password", icon: "key", active: onGallery && visibility === "password" },
 		{ href: "/?visibility=private", label: "Private", icon: "lock", active: onGallery && visibility === "private" },
+		{ href: "/trash", label: "Trash", icon: "trash", active: pathname === "/trash" },
 	];
 
 	return (

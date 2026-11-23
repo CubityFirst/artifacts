@@ -2,16 +2,21 @@ import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
 import {
 	ArtifactError,
-	deleteArtifact,
+	deleteFromTrash,
 	deleteUserData,
 	getOwnedArtifact,
 	listArtifacts,
 	listFiles,
+	listTrash,
 	listVersions,
 	previewUrl,
+	purgeTrash,
+	restoreFromTrash,
 	restoreVersion,
 	serializeArtifact,
 	setSharing,
+	TRASH_TTL_MS,
+	trashArtifact,
 	updateArtifact,
 	type Visibility,
 } from "./artifacts.ts";
@@ -80,7 +85,7 @@ api.get("/artifacts", async (c) => {
 		offset: q.offset ? Number(q.offset) : undefined,
 	});
 	const stats = await c.env.DB.prepare(
-		`SELECT kind, COUNT(*) AS n, SUM(size_bytes) AS bytes FROM artifacts WHERE user_id = ? GROUP BY kind`,
+		`SELECT kind, COUNT(*) AS n, SUM(size_bytes) AS bytes FROM artifacts WHERE user_id = ? AND deleted_at IS NULL GROUP BY kind`,
 	)
 		.bind(c.get("user").id)
 		.all<{ kind: string; n: number; bytes: number }>();
@@ -142,9 +147,9 @@ api.post("/artifacts/:id/restore", async (c) => {
 	return c.json(serializeArtifact(c.env, art));
 });
 
+// Deleting moves to trash; /trash restores or deletes for good.
 api.delete("/artifacts/:id", async (c) => {
-	const art = await getOwnedArtifact(c.env, c.get("user").id, c.req.param("id"));
-	await deleteArtifact(c.env, art.id);
+	const art = await trashArtifact(c.env, c.get("user").id, c.req.param("id"));
 	return c.json({ deleted: art.id });
 });
 
@@ -153,12 +158,10 @@ api.post("/artifacts/bulk-delete", async (c) => {
 	if (!Array.isArray(ids) || ids.length > 200) throw new ArtifactError("Provide up to 200 ids");
 	const deleted: string[] = [];
 	for (const id of ids) {
-		const row = await c.env.DB.prepare(`SELECT id FROM artifacts WHERE id = ? AND user_id = ?`)
-			.bind(String(id), c.get("user").id)
-			.first<{ id: string }>();
-		if (row) {
-			await deleteArtifact(c.env, row.id);
-			deleted.push(row.id);
+		try {
+			deleted.push((await trashArtifact(c.env, c.get("user").id, String(id))).id);
+		} catch (err) {
+			if (!(err instanceof ArtifactError && err.status === 404)) throw err;
 		}
 	}
 	return c.json({ deleted });
@@ -171,6 +174,37 @@ api.post("/artifacts/bulk-sharing", async (c) => {
 	for (const id of ids) await setSharing(c.env, c.get("user").id, String(id), { visibility });
 	return c.json({ updated: ids.length });
 });
+
+// Trash ---------------------------------------------------------------------------
+
+api.get("/trash", async (c) => {
+	const q = c.req.query();
+	const res = await listTrash(c.env, c.get("user").id, {
+		limit: q.limit ? Number(q.limit) : undefined,
+		offset: q.offset ? Number(q.offset) : undefined,
+	});
+	// No preview_url: trashed artifacts can't be opened on the content origin.
+	const items = res.items.map((a) => ({
+		...serializeArtifact(c.env, a),
+		url: null,
+		deleted_at: a.deleted_at!,
+		purge_at: a.deleted_at! + TRASH_TTL_MS,
+	}));
+	return c.json({ ...res, items });
+});
+
+api.post("/trash/:id/restore", async (c) => {
+	const art = await restoreFromTrash(c.env, c.get("user").id, c.req.param("id"));
+	return c.json(serializeArtifact(c.env, art));
+});
+
+api.delete("/trash/:id", async (c) => {
+	await deleteFromTrash(c.env, c.get("user").id, c.req.param("id"));
+	return c.json({ deleted: c.req.param("id") });
+});
+
+/** Empty trash, in bounded batches: the client repeats while `remaining` > 0. */
+api.post("/trash/empty", async (c) => c.json(await purgeTrash(c.env, { userId: c.get("user").id, limit: 50 })));
 
 // Access tokens for MCP clients ------------------------------------------------
 
@@ -196,8 +230,12 @@ const requireAdmin: MiddlewareHandler<AppEnv & { Variables: { user: User } }> = 
 
 api.get("/admin/users", requireAdmin, async (c) => {
 	const { results } = await c.env.DB.prepare(
+		// artifact_count and bytes exclude trash; trash_count and trash_bytes are reported separately.
 		`SELECT u.id, u.sub, u.email, u.name, u.picture, u.roles, u.created_at, u.last_login_at,
-		   COUNT(a.id) AS artifact_count, COALESCE(SUM(a.size_bytes), 0) AS bytes
+		   COUNT(a.id) - COUNT(a.deleted_at) AS artifact_count,
+		   COALESCE(SUM(CASE WHEN a.deleted_at IS NULL THEN a.size_bytes END), 0) AS bytes,
+		   COUNT(a.deleted_at) AS trash_count,
+		   COALESCE(SUM(CASE WHEN a.deleted_at IS NOT NULL THEN a.size_bytes END), 0) AS trash_bytes
 		 FROM users u LEFT JOIN artifacts a ON a.user_id = u.id
 		 GROUP BY u.id ORDER BY u.last_login_at DESC`,
 	).all<Record<string, unknown> & { roles: string }>();

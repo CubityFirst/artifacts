@@ -34,8 +34,10 @@ export async function handleContent(request: Request, env: Env): Promise<Respons
 				410,
 			);
 		}
-		const art = await env.DB.prepare(`SELECT * FROM artifacts WHERE id = ?`).bind(token.a).first<ArtifactRow>();
-		if (!art || art.share_epoch !== token.s) return renderMessage("Link expired", "Ask the owner for a new link.", 410);
+		// Trashed artifacts are gone here, exactly as if they had been deleted.
+		const art = await env.DB.prepare(`SELECT * FROM artifacts WHERE id = ? AND deleted_at IS NULL`).bind(token.a).first<ArtifactRow>();
+		if (!art) return renderMessage("Nothing here", "This link may be mistyped, or the owner stopped sharing it.", 404);
+		if (art.share_epoch !== token.s) return renderMessage("Link expired", "Ask the owner for a new link.", 410);
 		return serveFile(request, env, art, token.v || art.current_version, rest(segments, 3), { privateCache: true });
 	}
 
@@ -44,7 +46,7 @@ export async function handleContent(request: Request, env: Env): Promise<Respons
 		return renderMessage("Nothing here", "This link may be mistyped, or the owner stopped sharing it.", 404);
 	}
 	if (segments.length === 2) return Response.redirect(`${url.origin}/${slug}/${url.search}`, 301);
-	const art = await env.DB.prepare(`SELECT * FROM artifacts WHERE slug = ?`).bind(slug).first<ArtifactRow>();
+	const art = await env.DB.prepare(`SELECT * FROM artifacts WHERE slug = ? AND deleted_at IS NULL`).bind(slug).first<ArtifactRow>();
 	if (!art || art.visibility === "private") {
 		return renderMessage("Nothing here", "This link may be mistyped, or the owner stopped sharing it.", 404);
 	}

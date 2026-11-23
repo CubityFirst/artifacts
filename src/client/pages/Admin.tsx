@@ -23,6 +23,8 @@ export function AdminPage() {
 
 	const totalBytes = users?.reduce((n, u) => n + u.bytes, 0) ?? 0;
 	const totalArtifacts = users?.reduce((n, u) => n + u.artifact_count, 0) ?? 0;
+	const trashCount = users?.reduce((n, u) => n + u.trash_count, 0) ?? 0;
+	const trashBytes = users?.reduce((n, u) => n + u.trash_bytes, 0) ?? 0;
 
 	return (
 		<div className="page">
@@ -31,7 +33,8 @@ export function AdminPage() {
 					<h1>Admin</h1>
 					<p className="muted">
 						{users
-							? `${users.length} users · ${totalArtifacts} artifacts · ${formatBytes(totalBytes)}`
+							? `${users.length} users · ${totalArtifacts} artifacts · ${formatBytes(totalBytes)}, not counting trash` +
+								(trashCount ? ` · ${trashCount} in trash (${formatBytes(trashBytes)})` : "")
 							: error
 								? " "
 								: "Loading…"}
@@ -62,7 +65,9 @@ export function AdminPage() {
 								<th>User</th>
 								<th>Roles</th>
 								<th className="num">Artifacts</th>
-								<th className="num">Storage</th>
+								<th className="num" title="Current versions of live artifacts; trash is listed underneath">
+									Storage
+								</th>
 								<th>Last sign-in</th>
 								<th aria-label="Actions" />
 							</tr>
@@ -88,9 +93,11 @@ export function AdminPage() {
 									</td>
 									<td className="num" data-label="Artifacts">
 										{u.artifact_count}
+										{u.trash_count ? <span className="muted small cell-sub">+{u.trash_count} in trash</span> : null}
 									</td>
 									<td className="num" data-label="Storage">
 										{formatBytes(u.bytes)}
+										{u.trash_count ? <span className="muted small cell-sub">+{formatBytes(u.trash_bytes)} in trash</span> : null}
 									</td>
 									<td className="muted" data-label="Last sign-in">
 										{timeAgo(u.last_login_at)}
@@ -113,7 +120,7 @@ export function AdminPage() {
 			<ConfirmDialog
 				open={!!remove}
 				title={`Delete ${remove?.name || remove?.email || "this user"}'s data?`}
-				body={`Removes their ${remove?.artifact_count ?? 0} artifacts, tokens and sessions from this site. Their cubityfir.st account isn't affected, and they can sign in again later with an empty library.`}
+				body={`Removes their ${remove?.artifact_count ?? 0} artifacts${remove?.trash_count ? ` and ${remove.trash_count} in trash` : ""}, tokens and sessions from this site. Their cubityfir.st account isn't affected, and they can sign in again later with an empty library.`}
 				confirmLabel="Delete user data"
 				destructive
 				onClose={() => setRemove(null)}

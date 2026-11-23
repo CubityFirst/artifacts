@@ -22,6 +22,8 @@ Artifacts are untrusted HTML/JS, so they live on a separate origin that never se
 
 Every change creates a new version. Files are content-addressed per artifact in R2, so versions share unchanged files. Markdown, code and data get rendered viewers, media gets players, and video/audio support HTTP range requests.
 
+Deleting (from the dashboard or MCP) moves an artifact to **Trash**. Its links stop working at once, and it's hidden everywhere else. From Trash you can restore it, which brings it back private, or delete it forever. The hourly cron deletes anything that has been in trash for 30 days.
+
 ## Sign-in: cubityfir.st (OIDC)
 
 - Authorization Code + PKCE (S256) with `state` and `nonce`, using [`openid-client`](https://github.com/panva/openid-client) configured from the discovery document.

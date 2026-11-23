@@ -23,6 +23,12 @@ export interface Artifact {
 	preview_url?: string;
 }
 
+export interface TrashedArtifact extends Artifact {
+	deleted_at: number;
+	/** When the hourly purge deletes it for good. */
+	purge_at: number;
+}
+
 export interface Version {
 	version: number;
 	entry: string;
@@ -78,8 +84,11 @@ export interface AdminUser {
 	roles: string[];
 	created_at: number;
 	last_login_at: number;
+	/** Live artifacts only; trash is counted separately. */
 	artifact_count: number;
 	bytes: number;
+	trash_count: number;
+	trash_bytes: number;
 }
 
 export class ApiError extends Error {
@@ -125,6 +134,14 @@ export const api = {
 	restore: (id: string, version: number) => request<Artifact>("POST", `/artifacts/${id}/restore`, { version }),
 	remove: (id: string) => request<{ deleted: string }>("DELETE", `/artifacts/${id}`),
 	bulkDelete: (ids: string[]) => request<{ deleted: string[] }>("POST", "/artifacts/bulk-delete", { ids }),
+	trash: (offset = 0) =>
+		request<{ items: TrashedArtifact[]; total: number; bytes: number; limit: number; offset: number }>(
+			"GET",
+			`/trash?offset=${offset}`,
+		),
+	restoreFromTrash: (id: string) => request<Artifact>("POST", `/trash/${id}/restore`),
+	deleteForever: (id: string) => request<{ deleted: string }>("DELETE", `/trash/${id}`),
+	emptyTrash: () => request<{ deleted: number; remaining: number }>("POST", "/trash/empty"),
 	bulkShare: (ids: string[], visibility: "private" | "link") =>
 		request<{ updated: number }>("POST", "/artifacts/bulk-sharing", { ids, visibility }),
 	tokens: () => request<{ items: Token[] }>("GET", "/tokens"),

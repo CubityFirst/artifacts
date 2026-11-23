@@ -6,7 +6,6 @@ import {
 	ArtifactError,
 	blobKey,
 	createArtifact,
-	deleteArtifact,
 	editArtifactFile,
 	getOwnedArtifact,
 	LIMITS,
@@ -16,6 +15,8 @@ import {
 	restoreVersion,
 	serializeArtifact,
 	setSharing,
+	TRASH_TTL_MS,
+	trashArtifact,
 	updateArtifact,
 } from "./artifacts.ts";
 import type { User } from "./auth.ts";
@@ -325,14 +326,13 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 		"delete_artifact",
 		{
 			title: "Delete artifact",
-			description: "Permanently delete an artifact with all versions and files; links stop working. Cannot be undone.",
+			description: "Moves to trash; links stop working. Restorable for 30 days from the dashboard.",
 			inputSchema: { id: z.string() },
 			annotations: { destructiveHint: true, idempotentHint: true },
 		},
 		wrap(async ({ id }) => {
-			const art = await getOwnedArtifact(env, user.id, id);
-			await deleteArtifact(env, art.id);
-			return { deleted: art.id, title: art.title };
+			const art = await trashArtifact(env, user.id, id);
+			return { trashed: art.id, title: art.title, purge_at: new Date(art.deleted_at! + TRASH_TTL_MS).toISOString() };
 		}),
 	);
 

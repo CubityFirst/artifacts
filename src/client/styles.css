@@ -1666,6 +1666,36 @@ textarea.input {
 .user-cell .muted {
 	font-size: 12.5px;
 }
+/* A second line under a number, e.g. "+3 in trash". */
+.cell-sub {
+	display: block;
+	white-space: nowrap;
+}
+
+/* Trash ------------------------------------------------------------------- */
+
+.trash-glyph {
+	display: grid;
+	place-items: center;
+	flex: none;
+	width: 32px;
+	height: 32px;
+	border-radius: 8px;
+	background: var(--surface-2);
+	color: var(--muted);
+}
+.trash-table .user-cell strong {
+	overflow-wrap: anywhere;
+}
+.trash-table td[data-label] {
+	white-space: nowrap;
+}
+.trash-actions {
+	display: inline-flex;
+	gap: 6px;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+}
 
 /* Dialog & toasts --------------------------------------------------------- */
 
