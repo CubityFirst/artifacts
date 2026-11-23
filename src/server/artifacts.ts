@@ -465,14 +465,27 @@ export async function editArtifactFile(
 	return commitVersion(env, art, next, { message: meta.message ?? `Edited ${target}`, source: meta.source, model: meta.model });
 }
 
-export async function restoreVersion(env: Env, userId: string, id: string, version: number): Promise<ArtifactRow> {
+/** Copies an old version's files and entry into a new current version. Nothing is deleted. */
+export async function restoreVersion(
+	env: Env,
+	userId: string,
+	id: string,
+	version: number,
+	meta: { title?: string; description?: string; message?: string; source?: string; model?: string } = {},
+): Promise<ArtifactRow> {
 	const art = await getOwnedArtifact(env, userId, id);
 	const v = await env.DB.prepare(`SELECT * FROM artifact_versions WHERE artifact_id = ? AND version = ?`)
 		.bind(id, version)
 		.first<VersionRow>();
 	if (!v) throw new ArtifactError(`Version ${version} not found`, 404);
+	if (v.version === art.current_version) throw new ArtifactError(`Version ${version} is already the current version`, 409);
 	const files = await listFiles(env, id, version);
-	return commitVersion(env, art, files, { entry: v.entry, message: `Restored version ${version}`, source: "dashboard" });
+	return commitVersion(env, art, files, {
+		...meta,
+		entry: v.entry,
+		message: meta.message || `Restored version ${version}`,
+		source: meta.source ?? "dashboard",
+	});
 }
 
 export interface SharingInput {

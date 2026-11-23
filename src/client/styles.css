@@ -1356,7 +1356,22 @@ textarea.input {
 	display: grid;
 	gap: 2px;
 }
+/* The row is the link plus, for older versions, a Restore button beside it (a button can't sit inside a link). */
+.versions li {
+	display: flex;
+	align-items: center;
+	border-radius: var(--radius-sm);
+}
+.versions li:hover {
+	background: var(--surface-2);
+}
+.versions li[aria-current="true"] {
+	background: var(--surface-2);
+	box-shadow: inset 2px 0 0 var(--accent);
+}
 .version {
+	flex: 1;
+	min-width: 0;
 	display: flex;
 	align-items: center;
 	gap: 10px;
@@ -1364,12 +1379,20 @@ textarea.input {
 	border-radius: var(--radius-sm);
 	text-decoration: none;
 }
-.version:hover {
-	background: var(--surface-2);
+/* Always there (touch has no hover), but quiet so a long history doesn't read as a column of buttons. */
+.version-restore {
+	flex: none;
+	margin-right: 6px;
+	border-color: transparent;
+	background: transparent;
+	box-shadow: none;
+	color: var(--muted);
 }
-.versions li[aria-current="true"] .version {
-	background: var(--surface-2);
-	box-shadow: inset 2px 0 0 var(--accent);
+.version-restore:hover,
+.version-restore:focus-visible {
+	border-color: var(--line-strong);
+	background: var(--surface);
+	color: var(--fg);
 }
 .version-n {
 	font: 600 12px var(--mono);

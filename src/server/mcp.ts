@@ -13,6 +13,7 @@ import {
 	listArtifacts,
 	listFiles,
 	listVersions,
+	restoreVersion,
 	serializeArtifact,
 	setSharing,
 	updateArtifact,
@@ -167,12 +168,18 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 			title: "Update artifact",
 			description:
 				"Add/replace files, delete files, and/or change title, description or entry. Unlisted files are kept unless replace_all. " +
-				"Changing files or entry creates a version; title/description alone doesn't.",
+				"Changing files or entry creates a version; title/description alone doesn't. Roll back with restore_version.",
 			inputSchema: {
 				id: z.string(),
 				files: z.array(fileSchema).optional().describe("Files to add or overwrite."),
 				delete_paths: z.array(z.string()).optional(),
 				replace_all: z.boolean().optional().describe("New version contains only `files`."),
+				restore_version: z
+					.number()
+					.int()
+					.min(1)
+					.optional()
+					.describe("Roll back: new version copying this version's files and entry. Not combinable with file or entry changes."),
 				title: z.string().optional(),
 				description: z.string().optional(),
 				entry: z.string().optional().describe("File that opens first; must exist."),
@@ -181,7 +188,16 @@ function buildServer(env: Env, user: User, token: TokenRow) {
 			},
 			annotations: { destructiveHint: false, idempotentHint: false },
 		},
-		wrap(async ({ id, ...args }) => serializeArtifact(env, await updateArtifact(env, user.id, id, { ...args, source }))),
+		wrap(async ({ id, restore_version, ...args }) => {
+			if (restore_version === undefined) {
+				return serializeArtifact(env, await updateArtifact(env, user.id, id, { ...args, source }));
+			}
+			const { files, delete_paths, replace_all, entry, ...meta } = args;
+			if (files?.length || delete_paths?.length || replace_all || entry !== undefined) {
+				throw new ArtifactError("restore_version can't be combined with files, delete_paths, replace_all or entry");
+			}
+			return serializeArtifact(env, await restoreVersion(env, user.id, id, restore_version, { ...meta, source }));
+		}),
 	);
 
 	server.registerTool(

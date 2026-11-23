@@ -102,7 +102,16 @@ async function serveFile(
 ): Promise<Response> {
 	const url = new URL(request.url);
 	const isEntry = path === "";
-	const wanted = isEntry ? art.entry : path;
+	let entry = art.entry;
+	if (isEntry && version !== art.current_version) {
+		// Each version keeps its own entry; an old version may open a file the current one no longer has.
+		const row = await env.DB.prepare(`SELECT entry FROM artifact_versions WHERE artifact_id = ? AND version = ?`)
+			.bind(art.id, version)
+			.first<{ entry: string }>();
+		if (!row) return renderMessage("Not found", "This version of the artifact doesn't exist.", 404);
+		entry = row.entry;
+	}
+	const wanted = isEntry ? entry : path;
 	let file = await findFile(env, art.id, version, wanted);
 	if (!file && (path === "" || path.endsWith("/") || !path.split("/").pop()!.includes("."))) {
 		file = await findFile(env, art.id, version, `${path.replace(/\/$/, "")}/index.html`.replace(/^\//, ""));
