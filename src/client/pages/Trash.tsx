@@ -120,8 +120,8 @@ export function TrashPage() {
 									</td>
 									<td className="muted" data-label="Deleted for good">
 										<time dateTime={new Date(a.purge_at).toISOString()} title={formatDate(a.purge_at)}>
-											{/* The hourly purge can lag the 30-day mark by up to an hour. */}
-											{a.purge_at <= Date.now() ? "Within the hour" : timeAgo(a.purge_at)}
+											{/* The hourly purge runs after the 30-day mark, in batches. */}
+											{a.purge_at <= Date.now() ? "Awaiting purge" : timeAgo(a.purge_at)}
 										</time>
 									</td>
 									<td className="actions">
