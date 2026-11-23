@@ -25,15 +25,22 @@ export function DetailPage({ id }: { id: string }) {
 	const [device, setDevice] = useState<Device>("desktop");
 	const [confirmDelete, setConfirmDelete] = useState(false);
 	const [frameKey, setFrameKey] = useState(0);
+	const [restoring, setRestoring] = useState<number | null>(null);
 	const frameWrap = useRef<HTMLDivElement>(null);
 	const toast = useToast();
 	const panel = usePanel();
 
+	// Only the most recently started fetch may update the page, so a slow, older response can't overwrite a newer one.
+	const fetchSeq = useRef(0);
 	const reload = useCallback(async () => {
+		const n = ++fetchSeq.current;
 		try {
-			setArt(await api.get(id, versionParam));
+			const next = await api.get(id, versionParam);
+			if (n !== fetchSeq.current) return;
+			setArt(next);
 			setError(null);
 		} catch (err) {
+			if (n !== fetchSeq.current) return;
 			if (err instanceof ApiError && err.status === 404) setError("Artifact not found");
 			else setError(err instanceof Error ? err.message : String(err));
 		}
@@ -42,6 +49,27 @@ export function DetailPage({ id }: { id: string }) {
 	useEffect(() => {
 		void reload();
 	}, [reload]);
+
+	// Restoring publishes the old files as a new version, then shows the latest one.
+	const restore = async (version: number) => {
+		if (restoring !== null) return;
+		setRestoring(version);
+		try {
+			const next = await api.restore(id, version);
+			toast(`Restored v${version} as v${next.version}`);
+			// Fetch the latest here, not via `reload` (its ?v= may be stale), and stay busy until it lands.
+			const n = ++fetchSeq.current;
+			const latest = await api.get(id);
+			// Read the live URL, not this render's: the user may have moved on while the restore was in flight.
+			if (location.pathname !== `/a/${id}`) return;
+			if (n === fetchSeq.current) setArt(latest);
+			if (location.search) navigate(`/a/${id}`, { replace: true });
+		} catch (err) {
+			toast(err instanceof Error ? err.message : "Couldn't restore this version", "error");
+		} finally {
+			setRestoring(null);
+		}
+	};
 
 	if (error) {
 		return (
@@ -89,7 +117,9 @@ export function DetailPage({ id }: { id: string }) {
 			</div>
 		);
 
-	const viewingOld = art.viewing_version !== art.version;
+	// Only while the loaded version is the one in the URL: right after switching versions (or a restore leaving ?v=),
+	// the previous data is still on screen, and its Restore button would restore the wrong version.
+	const viewingOld = art.viewing_version === versionParam && art.viewing_version !== art.version;
 	const openUrl = art.url && !viewingOld ? art.url : art.preview_url;
 	const viewedAt = art.versions.find((v) => v.version === art.viewing_version)?.created_at;
 	const shareState =
@@ -187,6 +217,32 @@ export function DetailPage({ id }: { id: string }) {
 				</div>
 			</header>
 
+			{/* Above the preview area, not inside it, so the floating side card never covers its buttons. */}
+			{viewingOld ? (
+				<div className="banner">
+					<Icon name="history" size={16} />
+					<span className="banner-text">
+						<strong title={viewedAt ? formatDate(viewedAt) : undefined}>
+							Viewing v{art.viewing_version} of {art.version}
+							{viewedAt ? `, from ${timeAgo(viewedAt)}` : ""}
+						</strong>
+						<span>Restoring publishes it as v{art.version + 1}. Nothing is deleted.</span>
+					</span>
+					<span className="grow" />
+					<button
+						type="button"
+						className="btn btn-sm btn-primary"
+						disabled={restoring !== null}
+						onClick={() => void restore(art.viewing_version)}
+					>
+						{restoring === art.viewing_version ? "Restoring…" : "Restore this version"}
+					</button>
+					<Link href={`/a/${art.id}`} className="btn btn-sm">
+						Back to latest
+					</Link>
+				</div>
+			) : null}
+
 			<div className="detail-body">
 				<section className="preview" aria-label="Preview">
 					<div className={`frame-wrap frame-${device}`} ref={frameWrap}>
@@ -232,7 +288,7 @@ export function DetailPage({ id }: { id: string }) {
 						{panel.shown === "details" ? (
 							<DetailsPanel art={art} onSaved={reload} onDelete={() => setConfirmDelete(true)} />
 						) : null}
-						{panel.shown === "versions" ? <VersionsPanel art={art} /> : null}
+						{panel.shown === "versions" ? <VersionsPanel art={art} restoring={restoring} onRestore={restore} /> : null}
 						{panel.shown === "files" ? <FilesPanel art={art} /> : null}
 					</div>
 				</aside>
@@ -648,7 +704,15 @@ function DetailsPanel({ art, onSaved, onDelete }: { art: ArtifactDetail; onSaved
 	);
 }
 
-function VersionsPanel({ art }: { art: ArtifactDetail }) {
+function VersionsPanel({
+	art,
+	restoring,
+	onRestore,
+}: {
+	art: ArtifactDetail;
+	restoring: number | null;
+	onRestore: (version: number) => void;
+}) {
 	return (
 		<ol className="versions">
 			{art.versions.map((v) => {
@@ -668,6 +732,18 @@ function VersionsPanel({ art }: { art: ArtifactDetail }) {
 							</span>
 							{current ? <span className="pill">Current</span> : null}
 						</Link>
+						{current ? null : (
+							<button
+								type="button"
+								className="btn btn-sm version-restore"
+								aria-label={`Restore v${v.version}`}
+								title={`Publish v${v.version} again as v${art.version + 1}`}
+								disabled={restoring !== null}
+								onClick={() => onRestore(v.version)}
+							>
+								{restoring === v.version ? "Restoring…" : "Restore"}
+							</button>
+						)}
 					</li>
 				);
 			})}
