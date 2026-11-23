@@ -117,8 +117,9 @@ export function DetailPage({ id }: { id: string }) {
 			</div>
 		);
 
-	// Gated on ?v= too, so the banner goes away as soon as a restore navigates to the latest version.
-	const viewingOld = versionParam !== undefined && art.viewing_version !== art.version;
+	// Only while the loaded version is the one in the URL: right after switching versions (or a restore leaving ?v=),
+	// the previous data is still on screen, and its Restore button would restore the wrong version.
+	const viewingOld = art.viewing_version === versionParam && art.viewing_version !== art.version;
 	const openUrl = art.url && !viewingOld ? art.url : art.preview_url;
 	const viewedAt = art.versions.find((v) => v.version === art.viewing_version)?.created_at;
 	const shareState =
