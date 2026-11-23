@@ -21,7 +21,6 @@
 		"test",
 		"cloudflare.config.ts",
 		"vite.config.ts",
-		"vitest.config.ts",
 		".cloudflare/types"
 	]
 }
