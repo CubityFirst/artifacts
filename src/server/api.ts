@@ -16,6 +16,7 @@ import {
 	type Visibility,
 } from "./artifacts.ts";
 import { type AppEnv, isAdmin, type User } from "./auth.ts";
+import { recentFailures } from "./throttle.ts";
 import { createToken, listTokens, revokeToken } from "./tokens.ts";
 
 export const api = new Hono<AppEnv & { Variables: { user: User } }>();
@@ -103,6 +104,7 @@ api.get("/artifacts/:id", async (c) => {
 		preview_url: await previewUrl(c.env, art, version === art.current_version ? 0 : version),
 		files: files.map((f) => ({ path: f.path, content_type: f.content_type, size: f.size })),
 		versions,
+		failed_password_attempts_24h: art.visibility === "password" ? await recentFailures(c.env, art.id) : 0,
 	});
 });
 
