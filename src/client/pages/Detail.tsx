@@ -30,11 +30,17 @@ export function DetailPage({ id }: { id: string }) {
 	const toast = useToast();
 	const panel = usePanel();
 
+	// Only the most recently started fetch may update the page, so a slow, older response can't overwrite a newer one.
+	const fetchSeq = useRef(0);
 	const reload = useCallback(async () => {
+		const n = ++fetchSeq.current;
 		try {
-			setArt(await api.get(id, versionParam));
+			const next = await api.get(id, versionParam);
+			if (n !== fetchSeq.current) return;
+			setArt(next);
 			setError(null);
 		} catch (err) {
+			if (n !== fetchSeq.current) return;
 			if (err instanceof ApiError && err.status === 404) setError("Artifact not found");
 			else setError(err instanceof Error ? err.message : String(err));
 		}
@@ -51,11 +57,13 @@ export function DetailPage({ id }: { id: string }) {
 		try {
 			const next = await api.restore(id, version);
 			toast(`Restored v${version} as v${next.version}`);
+			// Fetch the latest here, not via `reload` (its ?v= may be stale), and stay busy until it lands.
+			const n = ++fetchSeq.current;
+			const latest = await api.get(id);
 			// Read the live URL, not this render's: the user may have moved on while the restore was in flight.
 			if (location.pathname !== `/a/${id}`) return;
+			if (n === fetchSeq.current) setArt(latest);
 			if (location.search) navigate(`/a/${id}`, { replace: true });
-			// Fetch the latest here, not via `reload` (its ?v= may be stale), and stay busy until it lands.
-			setArt(await api.get(id));
 		} catch (err) {
 			toast(err instanceof Error ? err.message : "Couldn't restore this version", "error");
 		} finally {
